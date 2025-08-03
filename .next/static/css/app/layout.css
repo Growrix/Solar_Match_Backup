@@ -706,6 +706,9 @@ video {
 .z-50 {
   z-index: 50;
 }
+.z-20 {
+  z-index: 20;
+}
 .order-1 {
   order: 1;
 }
@@ -795,6 +798,9 @@ video {
 }
 .mt-auto {
   margin-top: auto;
+}
+.ml-2 {
+  margin-left: 0.5rem;
 }
 .line-clamp-3 {
   overflow: hidden;
@@ -909,6 +915,9 @@ video {
 }
 .max-h-\[calc\(100vh-2rem\)\] {
   max-height: calc(100vh - 2rem);
+}
+.max-h-60 {
+  max-height: 15rem;
 }
 .min-h-\[100px\] {
   min-height: 100px;
@@ -1039,6 +1048,10 @@ video {
 }
 .rotate-45 {
   --tw-rotate: 45deg;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+.rotate-180 {
+  --tw-rotate: 180deg;
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 .scale-100 {
@@ -1229,6 +1242,9 @@ video {
 }
 .divide-onyx-600\/30 > :not([hidden]) ~ :not([hidden]) {
   border-color: rgb(101 103 103 / 0.3);
+}
+.overflow-auto {
+  overflow: auto;
 }
 .overflow-hidden {
   overflow: hidden;
@@ -1483,6 +1499,10 @@ video {
 .bg-onyx-600\/50 {
   background-color: rgb(101 103 103 / 0.5);
 }
+.bg-onyx-700 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(139 141 141 / var(--tw-bg-opacity, 1));
+}
 .bg-purple-500 {
   --tw-bg-opacity: 1;
   background-color: rgb(168 85 247 / var(--tw-bg-opacity, 1));
@@ -1539,6 +1559,9 @@ video {
 }
 .bg-yellow-500\/80 {
   background-color: rgb(234 179 8 / 0.8);
+}
+.bg-onyx-600\/80 {
+  background-color: rgb(101 103 103 / 0.8);
 }
 .bg-gradient-to-b {
   background-image: linear-gradient(to bottom, var(--tw-gradient-stops));

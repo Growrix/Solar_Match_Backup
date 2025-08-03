@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MapPin, DollarSign, ArrowRight, Home, Zap, Calculator, CheckCircle, AlertCircle, Battery, ArrowLeft } from 'lucide-react';
 import { calculateSolarQuote, type QuoteCalculationInputs, type QuoteCalculationResult } from '@/lib/services/quoteSettingsService';
 import QuoteOptionsModal from './QuoteOptionsModal';
+import CustomDropdown from './CustomDropdown';
 
 interface InstantQuoteFormProps {
   onProceedToDetailedQuote: (quoteType: 'call_visit' | 'written') => void;
@@ -204,39 +205,40 @@ const InstantQuoteForm: React.FC<InstantQuoteFormProps> = ({ onProceedToDetailed
                 <label className="block text-battleship_gray-700 text-sm font-semibold mb-2">
                   State *
                 </label>
-                <select
-                  value={formData.state}
-                  onChange={(e) => handleInputChange('state', e.target.value)}
-                  className="w-full bg-onyx-600/50 backdrop-blur-sm border border-onyx-600/30 rounded-xl px-4 py-3 text-white focus:border-giants_orange-500 focus:outline-none transition-colors"
-                >
-                  <option value="">Select your state</option>
-                  <option value="NSW">New South Wales</option>
-                  <option value="VIC">Victoria</option>
-                  <option value="QLD">Queensland</option>
-                  <option value="WA">Western Australia</option>
-                  <option value="SA">South Australia</option>
-                  <option value="TAS">Tasmania</option>
-                  <option value="ACT">Australian Capital Territory</option>
-                  <option value="NT">Northern Territory</option>
-                </select>
+                <CustomDropdown
+                  options={[
+                    { value: '', label: 'Select your state' },
+                    { value: 'NSW', label: 'New South Wales' },
+                    { value: 'VIC', label: 'Victoria' },
+                    { value: 'QLD', label: 'Queensland' },
+                    { value: 'WA', label: 'Western Australia' },
+                    { value: 'SA', label: 'South Australia' },
+                    { value: 'TAS', label: 'Tasmania' },
+                    { value: 'ACT', label: 'Australian Capital Territory' },
+                    { value: 'NT', label: 'Northern Territory' },
+                  ]}
+                  selected={formData.state}
+                  onChange={(value) => handleInputChange('state', value)}
+                  placeholder="Select your state"
+                />
               </div>
-
               <div>
                 <label className="block text-battleship_gray-700 text-sm font-semibold mb-2">
                   <Home className="inline h-4 w-4 mr-1" />
                   Property Type *
                 </label>
-                <select
-                  value={formData.propertyType}
-                  onChange={(e) => handleInputChange('propertyType', e.target.value)}
-                  className="w-full bg-onyx-600/50 backdrop-blur-sm border border-onyx-600/30 rounded-xl px-4 py-3 text-white focus:border-giants_orange-500 focus:outline-none transition-colors"
-                >
-                  <option value="">Select property type</option>
-                  <option value="house">House</option>
-                  <option value="townhouse">Townhouse</option>
-                  <option value="apartment">Apartment</option>
-                  <option value="commercial">Commercial</option>
-                </select>
+                <CustomDropdown
+                  options={[
+                    { value: '', label: 'Select property type' },
+                    { value: 'house', label: 'House' },
+                    { value: 'townhouse', label: 'Townhouse' },
+                    { value: 'apartment', label: 'Apartment' },
+                    { value: 'commercial', label: 'Commercial' },
+                  ]}
+                  selected={formData.propertyType || ''}
+                  onChange={(value) => handleInputChange('propertyType', value)}
+                  placeholder="Select property type"
+                />
               </div>
             </div>
 
@@ -341,17 +343,18 @@ const InstantQuoteForm: React.FC<InstantQuoteFormProps> = ({ onProceedToDetailed
                   <DollarSign className="inline h-4 w-4 mr-1" />
                   Budget Range *
                 </label>
-                <select
-                  value={formData.budgetRange}
-                  onChange={(e) => handleInputChange('budgetRange', e.target.value)}
-                  className="w-full bg-onyx-600/50 backdrop-blur-sm border border-onyx-600/30 rounded-xl px-4 py-3 text-white focus:border-giants_orange-500 focus:outline-none transition-colors"
-                >
-                  <option value="">Select budget range</option>
-                  <option value="5000-10000">$5,000 - $10,000</option>
-                  <option value="10000-20000">$10,000 - $20,000</option>
-                  <option value="20000-30000">$20,000 - $30,000</option>
-                  <option value="30000+">$30,000+</option>
-                </select>
+                <CustomDropdown
+                  options={[
+                    { value: '', label: 'Select budget range' },
+                    { value: '5000-10000', label: '$5,000 - $10,000' },
+                    { value: '10000-20000', label: '$10,000 - $20,000' },
+                    { value: '20000-30000', label: '$20,000 - $30,000' },
+                    { value: '30000+', label: '$30,000+' },
+                  ]}
+                  selected={formData.budgetRange || ''}
+                  onChange={(value) => handleInputChange('budgetRange', value)}
+                  placeholder="Select budget range"
+                />
               </div>
 
               {/* Roof Type */}
@@ -359,17 +362,18 @@ const InstantQuoteForm: React.FC<InstantQuoteFormProps> = ({ onProceedToDetailed
                 <label className="block text-battleship_gray-700 text-sm font-semibold mb-2">
                   Roof Type *
                 </label>
-                <select
-                  value={formData.roofType}
-                  onChange={(e) => handleInputChange('roofType', e.target.value)}
-                  className="w-full bg-onyx-600/50 backdrop-blur-sm border border-onyx-600/30 rounded-xl px-4 py-3 text-white focus:border-giants_orange-500 focus:outline-none transition-colors"
-                >
-                  <option value="">Select roof type</option>
-                  <option value="tile">Tile</option>
-                  <option value="tin">Tin/Metal</option>
-                  <option value="flat">Flat</option>
-                  <option value="other">Other</option>
-                </select>
+                <CustomDropdown
+                  options={[
+                    { value: '', label: 'Select roof type' },
+                    { value: 'tile', label: 'Tile' },
+                    { value: 'tin', label: 'Tin/Metal' },
+                    { value: 'flat', label: 'Flat' },
+                    { value: 'other', label: 'Other' },
+                  ]}
+                  selected={formData.roofType || ''}
+                  onChange={(value) => handleInputChange('roofType', value)}
+                  placeholder="Select roof type"
+                />
               </div>
               
               {/* Battery Option */}

@@ -1,0 +1,60 @@
+# SolarMatch Quote Flow Documentation
+
+## 1. Current Quote Flow (as of August 3, 2025)
+
+### Step-by-Step User Journey
+1. **Instant Quote Form** (`components/InstantQuoteForm.tsx`)
+   - User enters property details, location, state, property type, roof type, budget, and energy usage.
+   - Form is multi-step: property info → energy/budget → instant quote result.
+
+2. **Instant Quote Result**
+   - User sees an instant quote with system size, rebates, and cost breakdown.
+   - Button: **"Get Detailed Quotes from Installers"**
+
+3. **Quote Options Modal** (`QuoteOptionsModal`)
+   - Modal opens with two options:
+     - **Call/Visit Quote**
+     - **Written Quote**
+   - User selects one option.
+
+4. **Detailed Quote Form** (`components/RequestQuote.tsx`)
+   - After option selection, user is taken to a multi-step form for detailed quote request.
+   - Steps include: property info, energy/budget, instant quote result, personal details, and confirmation.
+   - Handles both quote types (written/call-visit) and collects user contact info if needed.
+   - Submits quote request to backend.
+   - Shows success/confirmation screen.
+
+### Key Files Involved
+- `components/InstantQuoteForm.tsx` — Main instant quote form and logic
+- `components/QuoteOptionsModal.tsx` — Modal for selecting quote type
+- `components/RequestQuote.tsx` — Full multi-step detailed quote form
+
+---
+
+## 2. Discussion & Findings (from recent audit)
+
+- The quote flow is modular and split across several components.
+- The transition from instant quote to detailed quote is handled by a modal and a callback prop (`onProceedToDetailedQuote`).
+- The next form after quote type selection is in `RequestQuote.tsx`, which manages all steps and submission.
+- The code uses custom dropdowns for consistent UI and theme.
+- The flow supports both "written" and "call/visit" quote types, with logic for each.
+- Authentication is integrated: if the user is not logged in, an auth modal is shown before proceeding.
+- All user input and quote data is managed in local state and submitted to the backend.
+
+---
+
+## 3. Next Steps & TODOs
+
+- [ ] Review and refactor the transition logic between `InstantQuoteForm` and `RequestQuote` for clarity and maintainability.
+- [ ] Ensure the `navigate-to-request-quote` event and callback are robust and documented.
+- [ ] Audit and improve the user experience for both quote types (written/call-visit).
+- [ ] Confirm all required fields and validation are enforced in both forms.
+- [ ] Review backend integration for quote submission and error handling.
+- [ ] Add tests for the full quote flow, including edge cases.
+- [ ] Document any business logic or requirements for future enhancements (e.g., new quote types, additional user info, analytics).
+- [ ] Consider consolidating form state management if possible.
+- [ ] Review and update UI/UX for accessibility and mobile responsiveness.
+
+---
+
+**Last updated:** August 3, 2025

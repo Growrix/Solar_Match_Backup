@@ -1,0 +1,1337 @@
+## 🧾 Project Title:
+**SolarMatch** – Smart Solar Lead Platform
+
+## 🎯 Core Purpose (One-Liner):
+A modular SaaS platform connecting homeowners with verified solar installers via a hybrid flow of instant quotes, contact-controlled bidding, and monetized lead conversion — powered by secure authentication, Stripe logic, async chat, and rebate intelligence.
+
+## 👥 User Roles:
+**Guest:**
+Access Landing, Instant Quote Calculator, Solar Guides, News Feed
+**Homeowner:**
+Uses Instant Quote tool, requests detailed quotes, manages quote dashboard, participates in bidding, unlocks contact post-interest
+**Installer:**
+Applies for approval, views lead types, bids or purchases leads, submits quotes, gets notified of interest
+**Admin:**
+Approves users, manages quotes, payments, bidding logic, posts content, monitors platform
+
+## 🧩 Modules / Features (with Logic):
+1. **Authentication & OTP**
+- Email/password and Google login
+- Homeowners can start quote without signup; auth required before final submission
+- Role assigned on signup
+
+2. **Instant Quote Flow (No Sign-Up)**
+- Homeowners submit postcode, property type, bill amount, roof type
+- Instant estimate with rebate applied
+- CTA: “Get Detailed Quotes from Installers”
+
+3. **Quote Type Selection Modal**
+- Two paths:
+  - Call/Visit Quote → Visible to installers who can pay via Stripe to unlock contact; chat is opened post-purchase.
+  - No Call / Written Quote → Stays anonymised; visible to installers for bidding.
+
+4. **Detailed Info Form + Auth**
+- Collects name, email, phone, address
+- Requires login/signup before submit
+- Upon auth, data from both forms are merged into one lead record
+
+5. **Quote Request Logic**
+- Leads are tagged as call_visit or written
+- Call/Visit:
+  - Installers see summary
+  - Contact unlocked only after Stripe purchase
+  - Full chat access enabled
+- No Call/Written:
+  - Quotes submitted anonymously
+  - Chat/contact blocked
+- If homeowner clicks “I’m Interested”, triggers:
+  - Contact reveal
+  - Stripe 5% commission collection (Pay-on-Deal)
+
+6. **Installer Dashboard**
+- View leads by type (Call/Visit or Written)
+- Purchase Call/Visit leads via Stripe
+- Submit written quotes
+- Bid on quotes in up to 3 rounds
+- Get notified on homeowner interest
+
+7. **Quote Comparison + Bidding**
+- Homeowners compare multiple quotes side-by-side
+- Each quote includes a GPT-powered summary
+- Bidding Room unlocked after receiving 3+ quotes
+- 3 bid rounds max, auto-extension logic applied
+- Final accepted quote triggers Stripe Pay-on-Deal flow
+
+8. **Stripe Payments**
+- Stripe Checkout flows:
+  - Call/Visit Lead Unlock
+  - Pay-on-Deal Invoice (after “I’m Interested” on written leads)
+- Admin dashboard shows deal status and payment state
+
+9. **Async Chat System**
+- Chat is disabled by default
+- Chat opens:
+  - Instantly on Call/Visit after purchase
+  - On Written flow after “I’m Interested”
+- DB polling every 5s (no websockets)
+- Input sanitizer blocks contact sharing
+- Role & lead-type rules enforced per message
+
+10. **Admin Panel**
+- Approve installers
+- View/edit leads & quote statuses
+- Monitor bidding rooms & deadlines
+- Mark quotes as deal-closed → triggers payment
+- Payment dashboard with override logic
+- Campaign & pop-up builder
+- Blog content manager
+- View logs, flags, actions, messages
+
+11. **Rebate Calculator**
+- Inputs: postcode, bill, roof type
+- Outputs:
+  - Estimated rebate
+  - System size
+  - Payback timeline
+- Powered by JSON table in Phase 1
+
+12. **Blog Management**
+- Admin posts blog via WYSIWYG
+- SEO-friendly slugs and preview cards
+- Articles display on Learning Center
+
+13. **RSS-Based News Feed**
+- Auto-sync RSS from CleanTechnica, SEIA, etc.
+- News shown in “Solar News” tab
+- Items stored as news_feed entries with timestamp
+
+## 🧭 User Flows:
+**Guest** ➡️ Instant Quote ➡️ Detailed Request ➡️ Auth ➡️ Lead Type Selection ➡️ Homeowner Dashboard
+**Installer** ➡️ Register ➡️ Await Approval ➡️ Login ➡️ View Leads ➡️ Purchase/Bid ➡️ Submit Quote ➡️ Wait for Interest
+**Admin** ➡️ Login ➡️ Approve Users ➡️ Monitor Quotes ➡️ Close Deals ➡️ Stripe Process ➡️ Publish Content
+
+## 🧱 Database Tables:
+- users (id, email, role, phone, verified)
+- installers (business info, documents, status)
+- leads (address, type, homeowner_id, merged form data)
+- quotes (price, warranty, terms, installer_id, lead_id)
+- bids (round, quote_id, amount, installer_id)
+- messages (chat_id, sender_id, content)
+- posts (slug, title, body, author_id, created_at)
+- news_feed (source, title, url, summary)
+- payments (stripe_id, amount, type, related_lead_or_deal)
+- admin_logs (action_type, user_id, timestamp)
+
+## 🎨 UI Design Preferences:
+- Next.js + Tailwind + shadcn/ui
+- Card/grid dashboard layout
+- Chat modal w/ message bubbles
+- Responsive, mobile-first design
+- Sidebar for dashboard views
+- Dark/light toggle
+
+## 🧪 MVP vs Future Features:
+**MVP Includes:**
+- OTP & Auth Logic
+- Instant Quote Calculator
+- Lead Type Logic + Quote Submission
+- Stripe Payments (Unlock + Commission)
+- Quote Comparison + Bidding
+- Chat System (Role-based)
+- Admin Panel & Blog CMS
+- RSS Sync
+**Phase 2 Includes:**
+- Smart Buyer Badge
+- Referral Unlock System
+- AI Chatbot (Rebate Advisor)
+- Stripe Subscriptions
+- Installer Ratings & Reviews
+
+## ⚙️ Tech Stack Choices:
+- Frontend: Next.js + React
+- Backend: Supabase (Auth, DB, RLS, Edge Functions)
+- Payments: Stripe Checkout + webhook logic
+- Chat: Polling via Supabase tables (no websockets in MVP)
+- AI: GPT-4 for quote summaries
+- Hosting: Vercel or Netlify
+
+## 📦 Deliverables Checklist:
+- Fully structured codebase (VS Code ready)
+- .env.example file
+- Supabase DB schema (with RLS if applicable)
+- Stripe demo keys with mocked responses
+- Deployment guide (Vercel/Netlify)
+- Admin demo credentials
+- Excel feature map + tracking list
+
+✅ This version is fully aligned. Let me know if you want it as a .txt, .md, or Excel-ready breakdown.
+
+---
+
+# ✅ Step 1: Idea Summary & Goal (Final Version)
+
+## Project Title:
+🌞 **SolarMatch** – Modular Solar Lead Generation & Quoting Platform
+
+## Core Purpose (One-Liner):
+A platform for homeowners to receive trusted, competitive solar quotes and for installers to access verified leads, powered by smart flows, AI support, and monetisation logic.
+
+## 🎯 What Problem It Solves
+| Problem | Solution |
+| ------- | -------- |
+| Homeowners face spam, confusion, and scam risk | Verified installers, dual quote types, AI assistant, contact-blocked until interest/payment |
+| Installers waste money on bad leads | Pay-on-deal model, Stripe unlock for Call/Visit, real-time bidding |
+| Quotes are hard to compare | Side-by-side quote comparison with AI summaries and badges |
+| Lack of trust in solar journey | Guided flows, rebate calculators, trust badges, dual-mode chatbot |
+| No way to revise or negotiate quotes | Internal versioning with tracked updates and quote history |
+| Monetisation is limited | Multiple revenue streams via unlocks, deals, commissions, AI tools |
+
+## 🧑‍💻 Target Users
+🏡 **Homeowners** – Request quotes, compare, chat, and finalize deals
+🔧 **Installers** – Access leads, submit & revise quotes, unlock contact/chat
+🛠️ **Admins** – Manage installers, payments, user flows, content, and toggles
+
+## 💰 Business Model & Monetisation
+| Revenue Stream | Description |
+| -------------- | ----------- |
+| Lead Unlock Fees | Installers pay to unlock Call/Visit leads |
+| Pay-on-Deal Commissions | Stripe-based post-deal % for Written quotes |
+| Quote Unlock (Stripe) | Homeowners pay to unlock installer replies |
+| Premium Features | Referral unlocks, AI Assistant modules, ratings, promos |
+| Installer Subscription (Future) | Premium visibility, auto-bid assist |
+
+---
+
+# ✅ Step 2: Market & User Insight (Updated Final Version)
+
+## 🔍 Key Pain Points by User
+**Homeowners**
+- Spam & sales pressure
+  - Solved by “No Call/Written” quote option with masked contact
+- Scam risks & unverified sellers
+  - Only approved installers allowed with trust badges
+- Confusing quote info
+  - Built-in quote comparison with AI summaries and badges
+- Lack of solar knowledge
+  - AI-guided buying journey, rebate calculators, dual-mode assistant
+- No way to clarify or negotiate quotes
+  - Internal quote negotiation system with version tracking
+
+**Installers**
+- Wasted money on bad leads
+  - Only pay to unlock or pay-on-deal after homeowner interest
+- No control over lead types
+  - Choose between Call/Visit and No Call/Written flows
+- Hard to optimize bids or quotes
+  - AI Bid Coach offers GPT-powered suggestions pre-submit
+- Lack of chat or quote flexibility
+  - Live chat with AI boosters + editable quote versioning
+- Dashboard overload or confusion
+  - Role-based AI Assistant helps navigate quoting, leads, and bids
+
+**Admin / Platform Owner**
+- Weak monetisation in typical platforms
+  - Multiple revenue types: unlocks, commissions, content, AI tools
+- Low retention or SEO power
+  - Blog posts, news feed (RSS), future community content
+- No visibility on payments or usage
+  - Stripe dashboards + quote revision logs for audit clarity
+
+## 🏁 Competitor Gaps → SolarMatch Edge
+| Competitor Weakness | SolarMatch Advantage |
+| ------------------- | ------------------- |
+| Static lead resale models | Dynamic bidding, dual quote types |
+| No buyer education tools | Guided flows, AI chatbot, rebate logic |
+| Lack of quote transparency | In-app quote comparison + interest trigger |
+| No flexible pricing logic | Unlock, bid, or pay-on-deal pathways |
+| No negotiation or chat system | Versioned quotes, AI chat, installer chatflow |
+| Poor installer onboarding | Eligibility form, admin approval, deal tracking |
+
+## 🌟 Why SolarMatch Wins
+- Dual quote models (Call/Visit + Written)
+- AI Assistant (role-aware, site-wide)
+- Installer rating + badge logic
+- Internal quote versioning system
+- Stripe-integrated unlock & commission flows
+- Admin tools for override, toggles, and content control
+- Modular SaaS blueprint + scalable to community and campaigns
+
+---
+
+# Here is the updated version of Step 3: Core Features – Phase 1 (MVP) with improved clarity on the internal quote process and 5% deal logic:
+
+Here is the fully updated Step 3 (MVP Phase) including the new Smart Logs Viewer feature under Admin Features:
+
+Here is your fully updated Step 3, now including the AI Personalisation Memory feature under both Homeowner and Installer sections:
+
+## ✅ Step 3: Core Features – Phase 1 (MVP)
+This phase focuses on the minimum viable product needed to launch a fully usable platform for homeowners, installers, and admins — complete with monetisation, trust logic, quote versioning, and AI assistant support.
+
+### 🏠 Homeowner Features (MVP)
+| Feature | Description | Logic |
+| ------- | ----------- | ----- |
+| Instant Estimator Form | Anonymous solar quote preview | Postcode, usage, roof type → estimate + rebate logic |
+| Quote Type Selector | Choose Call/Visit or No Call/Written | Triggers different lead logic, tracked via lead_type |
+| Auth & Verification | Sign-up with email/OTP/Google | Required to receive quotes or chat |
+| Quote Dashboard | View installer quotes grouped by request | Only visible post-submission |
+| Quote Comparison Tool | Side-by-side specs with AI summaries | Click “I’m Interested” to trigger contact/payment |
+| Chat Unlock | Opens only after Stripe payment (written leads) | Triggers contact reveal & direct chat |
+| Quote Version History | View updated quotes from installers | Versions saved and time-stamped |
+| Final Deal & Contact Reveal | Contact shown after homeowner pays 5% commission | Stripe-based trigger confirms serious intent |
+| Rebate Calculator | Based on usage, postcode, system size | Uses live logic or API fallback |
+| Solar Guides & Learning Center | Static & AI-based content | Encourages “Smart Buyer” badge |
+| Notification Alerts | When new quotes arrive or deals close | Realtime or polling-based updates |
+| Smart Buyer Badge | Awarded after guide views or comparisons | Badge displayed to installers |
+| AI Assistant (Homeowner Mode) | GPT chatbot for rebates, quote help, etc. | Context-aware, role-filtered replies |
+| AI Personalisation Memory | Recalls last guide viewed, quote compared, or chat step | Enables contextual, session-aware GPT suggestions |
+
+### 🔧 Installer Features (MVP)
+| Feature | Description | Logic |
+| ------- | ----------- | ----- |
+| Eligibility Flow | Submit ABN, license, company info | Required for approval by admin |
+| Installer Approval System | Status: Pending → Approved → Suspended | Controlled from admin panel |
+| Dashboard | View live leads segmented by type | call_visit = unlock via Stripe, written = quote only |
+| Quote Builder | Internal form to build system quote | Fields: system size, battery, specs, warranty, message |
+| Quote Submission | Create, save, revise, and submit versions | Tracks status from draft → submitted → final |
+| Quote Reversion (Installer Controlled) | Reuse or revert to any previous version | Flags update and creates new version entry |
+| Stripe Unlock Button | For call/visit leads | Unlocks contact and chat once paid |
+| Deal Finalisation Trigger | Homeowner pays 5% to unlock full contact | Stripe payment marks deal stage start |
+| Chat Panel | Unlocks once homeowner is interested | Appears per lead after trigger |
+| AI Bid Coach | GPT assistant for better pricing strategy | Triggered before final submission |
+| Payments/Deals Tracker | Monitor lead engagement and conversion | Optional: Stripe webhook status integration |
+| AI Assistant (Installer Mode) | GPT chatbot for quoting help, dashboard use | Role-aware smart assistant |
+| AI Personalisation Memory | Remembers last quote draft, guide used, lead actions | Suggests next best step contextually |
+
+### 🛡️ Admin Features (MVP)
+| Feature | Description | Logic |
+| ------- | ----------- | ----- |
+| Admin Login | Email + password | Role-based route control |
+| Installer Manager | View, approve, suspend companies | Manual override allowed |
+| Lead Oversight | Track status of all homeowner requests | Manual unlocks possible |
+| Quote Tracker | View all submitted quotes | See current and prior versions |
+| Commissions & Payment Monitor | Stripe-based payment tracking | Triggers payout or contact reveal |
+| Smart Logs Viewer | View system events (quotes, chat, payments, auth) | Filter by role/date/type, flag actions, export logs |
+| Pop-Up / Campaign Manager | Launch lead campaigns or messages | Optional for MVP if needed |
+| Feature Toggles & Logs | Activate modules, view admin actions | Role-protected controls |
+
+---
+
+# ✅ Step 4: Enhancing Features – Phase 2
+These features are not essential for launch, but strongly enhance engagement, automation, and platform value once the MVP is live.
+
+## 🚀 Homeowner-Side Enhancements
+| Feature | Description | Benefit |
+| ------- | ----------- | ------ |
+| AI Chatbot Assistant | GPT-based guide for rebates, quotes, and installer questions | Builds trust, reduces drop-off |
+| Smart Buyer Badge | Shown after reading guides or comparing quotes | Improves quote quality, boosts installer trust |
+| Referral Unlock System | Invite friends to earn free quote unlocks | Viral loop, reduces friction |
+| Quote Status Notifications | "New quote added", "Installer viewed your request" | Re-engagement, clarity |
+| Favorite Installer List | Bookmark quotes for later | Personalisation, decision support |
+| Quote Version History | See previous installer quote edits | Transparency during negotiation |
+
+## 🛠️ Installer-Side Enhancements
+| Feature | Description | Benefit |
+| ------- | ----------- | ------ |
+| Installer Ratings & Reviews | Visible to homeowners post-deal | Boosts credibility, improves selection quality |
+| Quote Templates / Save Drafts | Faster quote creation & revision | Improves speed and consistency |
+| Profile Enhancer Tools | Add logo, certifications, team info | Builds trust visually |
+| Stripe Payout Tracker | View payout history, balances | Financial clarity, confidence |
+| Quote Analytics | View quote open rates, unlocks, conversions | Helps optimise quote strategy |
+| AI Assistant (Installer Mode) | Dashboard chatbot for quoting, strategy tips | Smart help on demand |
+
+## 🛡️ Admin-Side Enhancements
+| Feature | Description | Benefit |
+| ------- | ----------- | ------ |
+| Content CMS | Manage blogs, guides, FAQs | SEO, control of trust-building content |
+| Smart Logs & User Activity | Track engagement, status changes | Debugging, audit readiness |
+| Automation Triggers | Auto-send email/SMS for deal events | Lifecycle marketing & re-engagement |
+| Feature Toggles | Enable/disable experimental modules | Safer release of new features |
+| Manual Override Panel | Unlock quotes, extend expiry, flag deals | Precision admin tools |
+
+---
+
+# ✅ Step 5: Standout Features – Phase 3
+These features are designed to differentiate SolarMatch, add monetisation potential, and boost brand authority or viral growth. They're ideal for scale-up or premium tiers.
+
+## 🌟 Standout Features (Creative / Premium)
+| Feature | Description | Value |
+| ------- | ----------- | ----- |
+| Installer Leaderboard | Rankings based on ratings, deals, speed | Gamification, boosts competition, trust signal |
+| Community Content Feed | Tips, stories, questions (moderated) | SEO power, user-generated trust |
+| AI Bid Strategy Advisor | Suggests optimal quote values to installers | GPT-based, helps installers win more |
+| Behavioural Targeting Engine | Shows best quotes based on user profile | Improves conversion rate, personalisation |
+| Seasonal Promo Manager | Admin can create timed offers for leads | Boosts lead flow, drives urgency |
+| AI Chat Archive | Summarises prior installer chats for homeowners | Better memory, clarity for decisions |
+| Premium Installer Tier | Subscription unlocks extra features | Recurring revenue, higher trust badges |
+| Negotiation Replay Tool | View entire quote discussion with timeline | Transparency + better decision support |
+| Referral Analytics Dashboard | Track who referred who, unlock value earned | Viral growth + incentive tracking |
+
+---
+
+# Here is the fully updated Step 6, now including the new Smart Logs Viewer and log flagging/admin-only access logic:
+
+Here is the fully updated Step 6, now including the AI Assistant Memory Toggle within Admin Tools to align with the AI Personalisation Memory module:
+
+## ✅ Step 6: Admin Dashboard Planning (Updated)
+The Admin Dashboard is the command center for SolarMatch. It allows the platform owner to manage users, installers, quotes, payments, content, logs, AI behaviour, and system-level settings.
+
+### 🧭 Core Admin Controls
+| Module | Actions | Logic |
+| ------ | ------- | ----- |
+| Installer Management | Approve, suspend, edit installer profiles | View documents, trigger status updates |
+| User Oversight | Verify homeowners (if needed), view activity | Optional filters by quote type, activity |
+| Lead Monitor | See all quote requests + statuses | Override visibility, reassign if needed |
+| Quote Oversight | View all installer submissions and versions | Sort by lead ID, date, installer, or version |
+| Quote Version History | Access full edit trail for written quotes | Highlight updates and final version |
+| Deal Monitor | Track when quotes become deals | Confirm payments, force unlocks if needed |
+| Commissions Tracker | View % owed, Stripe webhook status | Show paid/unpaid, resend Stripe triggers |
+| Stripe Payout Log | View payouts, balances, errors | Pulled via Stripe Connect API |
+| Smart Logs Viewer | See platform activity logs (quotes, chats, auth, payments) | Filter by role, module, user ID, or date; export to CSV/JSON |
+| Flagged Logs Panel | Review auto-flagged or admin-flagged logs | Optional manual note + action trail for each |
+
+### ⚙️ Admin Tools & Utilities
+| Feature | Purpose | Notes |
+| ------- | ------- | ----- |
+| Pop-up Campaign Builder | Launch promo messages to homeowners | Targeted by postcode, time, or behaviour |
+| Content Manager (CMS) | Publish guides, blogs, FAQs | WYSIWYG editor or markdown input |
+| Feature Toggles | Enable/disable modules live | e.g., community feed, leaderboard, chatbot |
+| Notification Manager | Send manual or automated alerts | User-specific or global announcements |
+| System Logs Access | View detailed logs of events across modules | Role-restricted to admin only |
+| Chat Monitor | View flagged or abuse-reported chats | Optional moderation panel |
+| AI Feedback Tracker | See which AI responses were liked or flagged | Used to fine-tune prompt quality |
+| Manual Override Panel | Unlock quotes, extend expiries, adjust deals | Logged with admin action tracking |
+| AI Assistant Memory Toggle | Enable or disable GPT memory recall per user or system-wide | Used to support recent activity context logic |
+
+### 🔒 Logic Enhancements for Logs & Memory
+- system_logs table is readable by Admin role only via RLS
+- ai_recent_activity table stores session-level context (short-term memory)
+- Logs and memory flags can be filtered or exported
+- Supports investigation of contact info violations, AI prompt behavior, or suspicious activity
+
+The Admin Dashboard now provides full visibility, contextual AI control, and tools to enforce anonymity, compliance, and trust across the system.
+
+---
+
+# Here is your fully updated Step 7, now reflecting the AI Personalisation Memory logic under both Security and Scalability:
+
+## ✅ Step 7: Security, Scalability & Role Logic (Updated)
+This section ensures the platform is safe, scalable, and stable for all users — with robust access controls, audit-friendly logs, session-based AI memory, and future-proof infrastructure.
+
+### 🔐 Role-Based Access Control (RBAC)
+| Role | Access Level |
+| ---- | ------------ |
+| Guest | View public pages (landing, blog, guides) |
+| Homeowner | Full access to quote requests, dashboards, chat (post-payment), AI assistant |
+| Installer | View leads, submit & revise quotes, unlock via Stripe, use AI tools |
+| Admin | Full access to all platform data, logs, override tools, and payment triggers |
+
+### 🧱 Security Rules
+| Area | Rule |
+| ---- | ---- |
+| Auth | Supabase Auth with email/password + Google login |
+| Homeowner OTP | On phone number or email during sign-up |
+| Installer Approval | Required before viewing any leads |
+| Chat | Locked until Stripe payment or interest; auto-moderation enabled |
+| AI Assistant | Role-specific GPT prompts with optional memory injection |
+| AI Personalisation Memory | Session-based only; does not persist across sessions or store PII |
+| Quote Revisions | Each version logged with RLS enforcement per installer |
+| Data Access | Strict RLS on all user, lead, quote, log, and payment tables |
+| System Logs Access | Admin-only RLS on system_logs; filterable, exportable |
+| Rate Limiting | On quote requests, chat frequency, AI queries, and unlock attempts |
+| Stripe Webhooks | Verified via secret keys; triggers chat access or deal stage |
+| Contact Info | Fully hidden until unlock/payment; any leak = flag + ban |
+| Installer Message Filter | Regex + GPT scan for contact circumvention |
+| 2FA (Optional) | Available toggle for Admin UI login security |
+
+### 📈 Scalability Rules
+| Component | Strategy |
+| -------- | -------- |
+| Database | Modular Supabase schema with per-entity tables (quotes, leads, versions) |
+| Stripe | Connect model for installer payments, unlocks, and commissions |
+| Chat | MVP = polling; scalable to real-time channels via Supabase or third-party |
+| AI Modules | Stateless GPT API blocks; adjustable role, temp, memory logic |
+| AI Memory Context | Cached or session-based recall of last 3–5 actions per user |
+| Content Delivery | Hybrid static + SSR for blog, guides, and SEO utility |
+| Notification System | Polling or cron-triggered delivery via Supabase event logic |
+| Quote Versioning | quote_versions table isolates edits and rollback risk |
+| System Logs | system_logs table supports admin filters, flags, and exports |
+| APIs | Cached endpoints for postcodes, rebate zones, AI FAQs, etc. |
+
+---
+
+# ✅ 8. Modular Feature Breakdown (EXECUTION ZONE)
+This is where we translate each feature into developer-ready modules. Each includes user stories, inputs/outputs, logic, APIs, and end-points — fully ready for handoff to Developer GPT or Guru GPT.
+We’ll go module by module, starting with:
+
+## 🔹 Module 1: Instant Quote Estimator (Anonymous)
+
+### User Story
+ A visitor enters basic property and energy info to instantly estimate system cost and rebates without creating an account.
+
+### Inputs
+- Postcode
+- State
+- Property type (House/Apartment/etc.)
+- Monthly kWh OR quarterly bill (AUD)
+- Roof type
+- Budget range
+
+### Outputs
+- Estimated system size and cost
+- Rebate-adjusted price
+- Call-to-action: “Get Detailed Quotes from Installers”
+
+### Business Logic & Rules
+- Rebate = Estimated System Size × Rebate Rate (location-based)
+- Budget filter adjusts cost bands (optional display)
+- No personal data collected at this step
+- System size estimated via usage:
+  - system_kw = (monthly_kWh × 12) ÷ 1300 (basic rule-of-thumb)
+
+### Calculation Formulas
+- estimated_cost = system_kw × $1200 (adjustable by admin)
+- rebate = rebate_api(state, system_kw)
+- net_cost = estimated_cost - rebate
+
+### Data Dependencies & APIs
+- Static or dynamic AU rebate API
+- Local JSON if offline
+- postcode-to-zone logic
+
+### Roles Involved
+- Guest / Homeowner (pre-signup)
+- No installer or admin interaction
+
+### Connected Flows
+- Triggers Detailed Quote Modal
+- Stores temp lead object in state/session before sign-up
+
+### End-point
+- Shows net solar estimate
+- Displays “Get Detailed Quotes” CTA
+- Transitions to lead type selection
+
+## 🔹 Module 2: Detailed Quote Form + Lead Type Selector
+
+### User Story
+ After viewing the instant estimate, the user clicks “Get Detailed Quotes” and selects between a Call/Visit Quote or a No Call/Written Quote. They then complete their contact info and proceed to sign up or log in.
+
+### Inputs
+- Lead type selection:
+  - Option 1: “Call/Visit Quote”
+  - Option 2: “No Call / Written Quote”
+- Full Name
+- Email
+- Phone Number
+- Address (optional)
+
+### Outputs
+- Temp lead stored with merged anonymous + contact data
+- Trigger sign-up or login flow (email/password or Google)
+- Set lead type = call_visit or written
+
+### Business Logic & Rules
+- All input fields required except address
+- Sign-up/login is mandatory before lead is saved
+- Lead must merge previous form data (postcode, usage, etc.) with contact info
+- If user already exists, route to login and re-merge lead on success
+- Lead is not visible to installers until signup is complete
+- Store lead_type to control dashboard visibility later
+
+### Data Merge Flow
+1. User completes instant quote
+2. Selects lead type
+3. Enters contact info
+4. Proceeds to sign up or login
+5. On success, full lead = {anonymous + contact} is stored under user ID
+
+### Data Dependencies & APIs
+- Supabase leads table
+- Supabase Auth (email/pass or Google)
+- Optional session storage or context to hold partial lead state
+
+### Roles Involved
+- Homeowner (sign-up required post-form)
+- Admin (can view all lead types)
+
+### Connected Flows
+- Follows: Instant Quote Module
+- Leads to: Installer dashboards (visibility logic), Quote Builder
+- Also triggers: Notifications module, Stripe logic later
+
+### End-point
+- Lead record stored with full data
+- Homeowner logged in and redirected to dashboard
+- Lead becomes active and eligible for installer visibility
+
+## 🔹 Module 3: Installer Lead Feed + Unlock Logic
+
+### User Story
+ An approved installer logs in and sees available homeowner leads. Based on the lead type, they can either unlock the contact info by paying (Call/Visit) or submit a quote directly (Written).
+
+### Inputs
+- Installer login session
+- Lead type (call_visit or written)
+- Stripe unlock payment (for call_visit leads)
+- Lead visibility filters (e.g. postcode, date)
+
+### Outputs
+- List of visible leads
+- Unlock option for call_visit leads
+- Quote submission button for written leads
+- Real-time or polling-based updates on lead availability
+
+### Business Logic & Rules
+- Only Approved Installers can access this feed
+- call_visit leads:
+  - Require Stripe payment to unlock contact info
+  - Contact remains hidden until payment confirmed via webhook
+  - Chat unlocks after payment
+- written leads:
+  - Allow direct quote submission without payment
+  - Chat unlocks only when homeowner clicks “I’m Interested”
+- Installers can filter leads by:
+  - Postcode
+  - Date submitted
+  - Lead type
+
+### Data Display Logic
+- Show:
+  - Date
+  - Location (suburb/postcode)
+  - System size estimate
+  - Quote type
+  - Status (new/unlocked/submitted)
+- Hide:
+  - Contact info until unlocked or triggered
+
+### Stripe Logic
+- Stripe Connect or Pay Link integration
+- On successful payment:
+  - Update lead status to unlocked
+  - Reveal contact and enable chat
+  - Notify homeowner (optional)
+
+### Data Dependencies & APIs
+- Supabase Leads Table
+- Supabase Auth (installer role)
+- Stripe Webhooks (unlock events)
+- Optional: Lead filters API endpoint
+
+### Roles Involved
+- Installers: View, unlock, submit quotes
+- Admins: Monitor unlocks, override access
+
+### Connected Flows
+- Follows: Detailed Quote Form
+- Leads to: Quote Builder, Chat Panel
+- Triggers: Stripe webhook, notification system
+
+### End-point
+- Installer dashboard shows filtered leads
+- Contact details revealed post-payment (call_visit)
+- Ready for quote creation or chat initiation
+
+## 🔹 Module 4: Quote Builder + Submission Flow
+
+### User Story
+ Installers submit custom quotes for written leads directly from their dashboard. Each quote includes price, system specs, warranty, and optional message.
+
+### Inputs
+- Lead ID (pre-filled)
+- System size (kW)
+- Total price ($)
+- Inverter and panel brand
+- Warranty years
+- Message to homeowner
+
+### Outputs
+- New quote record linked to lead and installer
+- Installer notified of successful submission
+- Homeowner sees new quote in dashboard
+
+### Business Logic & Rules
+- One installer can submit one quote per lead
+- Admin can limit quote length or format
+- Quote status = “Submitted” until homeowner interacts
+- Validation for price range, non-empty fields
+
+### Data Dependencies & APIs
+- Supabase Quotes Table
+- Supabase Leads Table (foreign key)
+- Optional: brand dropdown (local JSON or API)
+
+### Roles Involved
+- Installers (create and edit quotes)
+- Admins (view, moderate, flag quotes)
+
+### Connected Flows
+- Follows: Lead Unlock
+- Triggers: Quote Comparison UI, Notification to homeowner
+
+### End-point
+- Valid quote stored
+- Quote appears in homeowner dashboard with AI summary
+
+## 🔹 Module 5: Quote Comparison UI + “I’m Interested” Trigger
+
+### User Story
+ Homeowners compare submitted quotes side-by-side and click “I’m Interested” on their preferred one to unlock chat or payment.
+
+### Inputs
+- Quote list for a lead
+- User interest click
+- AI-generated summaries
+
+### Outputs
+- Side-by-side comparison grid
+- Highlighted selections
+- Triggers chat unlock/payment depending on quote type
+
+### Business Logic & Rules
+- “I’m Interested” logs event under lead
+- If written, triggers payment/chat unlock logic
+- If call_visit, contact already revealed
+
+### Calculation Formulas
+- AI summary: GPT-powered analysis of quote specs
+- Savings estimate = (Avg local price – quoted price) × 1.1
+
+### Data Dependencies & APIs
+- Supabase Quotes Table
+- GPT summariser API
+- Stripe integration (for chat unlock)
+
+### Roles Involved
+- Homeowners
+- Admin (view selections, enforce logic)
+
+### Connected Flows
+- Follows: Quote Submission
+- Leads to: Chat Module, Deal Confirmation
+
+### End-point
+- “Interested” flag stored
+- Chat and/or contact revealed
+- Stripe payment handled (if needed)
+
+## 🔹 Module 6: Chat Panel + Unlock Trigger
+
+### User Story
+ Homeowners and installers chat post-selection. Chat only activates after interest is triggered or payment completed.
+
+### Inputs
+- User session (authenticated)
+- Lead + quote IDs
+- Chat messages (text only MVP)
+
+### Outputs
+- Chat messages with timestamps
+- Notification on new messages
+
+### Business Logic & Rules
+- Chat opens only after:
+  - Stripe payment (written) or
+  - Contact unlock (call_visit)
+- Admin can monitor or moderate flagged chats
+- Optional profanity filter
+
+### Data Dependencies & APIs
+- Supabase Realtime or Polling
+- Supabase Chat Table (user_id, lead_id, message)
+- Stripe unlock webhook trigger
+
+### Roles Involved
+- Homeowner
+- Installer
+- Admin (moderation view)
+
+### Connected Flows
+- Follows: “I’m Interested” Trigger
+- Leads to: Deal Close, Stripe Payment Completion
+
+### End-point
+- Chat visible and active
+- Messages stored and retrievable
+
+## 🔹 Module 7: Deal Close + Stripe Payment Confirmation
+
+### User Story
+ When a homeowner confirms a deal, Stripe payment finalizes and installers track status.
+
+### Inputs
+- “Deal Accepted” click
+- Stripe payment webhook
+
+### Outputs
+- Lead marked as “converted”
+- Stripe records commission
+- Admin + Installer notified
+
+### Business Logic & Rules
+- Stripe Connect used for commission routing
+- Deal status triggers email or SMS
+- Admin can manually override status
+
+### Data Dependencies & APIs
+- Stripe webhook
+- Supabase Leads + Deal Table
+- Optional email API
+
+### Roles Involved
+- Homeowner
+- Installer
+- Admin
+
+### Connected Flows
+- Follows: Chat / Interest Confirmation
+- Leads to: Ratings Module, Stripe Dashboard
+
+### End-point
+- Deal = confirmed
+- Payment = logged
+- Installer = charged commission
+
+## 🔹 Module 8: Ratings & Reviews System
+
+### User Story
+ Post-deal, homeowners leave ratings and reviews for installers.
+
+### Inputs
+- 1–5 star rating
+- Written review (optional)
+- Lead ID (to verify deal completion)
+
+### Outputs
+- Review stored under installer profile
+- Average rating updated
+
+### Business Logic & Rules
+- Only one review per deal
+- Admin can hide/delete offensive content
+- Anonymous display (optional toggle)
+
+### Data Dependencies & APIs
+- Supabase Reviews Table
+- Supabase Installer Profiles Table
+
+### Roles Involved
+- Homeowners (submit)
+- Admin (moderate)
+- Installers (view only)
+
+### Connected Flows
+- Follows: Deal Confirmation
+- Leads to: Leaderboard, Profile Enhancement
+
+### End-point
+- Review stored
+- Rating impacts installer ranking
+
+## 🔹 Module 9: Admin Stripe Dashboard + Manual Override
+
+### User Story
+ Admins view all Stripe activity, manage commissions, and override payment-related triggers.
+
+### Inputs
+- Stripe webhook events
+- Admin override actions
+- Filters (status, user, amount)
+
+### Outputs
+- Payment logs
+- Commission owed/paid
+- Manual status updates (if needed)
+
+### Business Logic & Rules
+- Webhook integrity check on all events
+- Manual override logs reason + admin ID
+- Commission payout logic defined per deal
+
+### Data Dependencies & APIs
+- Stripe API
+- Supabase Payments + Logs Tables
+
+### Roles Involved
+- Admin only
+
+### Connected Flows
+- Follows: Deal Completion
+- Leads to: Commissions Reporting, Notifications
+
+### End-point
+- Full financial status per deal
+- Errors handled or corrected by admin
+
+## 🔹 Module 10: Smart Buyer Badge System
+### User Story
+ Homeowners earn a trust badge by reading guides or comparing quotes before engaging.
+### Inputs
+- User engagement events (guide read, quote compare)
+
+### Outputs
+- Badge displayed on quote requests
+- Data logged to user profile
+
+### Business Logic & Rules
+- Trigger when:
+  - 2+ guides read OR
+  - 1+ quote comparison viewed
+- Badge stored in user metadata
+- Visible to installers during quote view
+
+### Roles Involved
+- Homeowner (earns badge)
+- Installer (views badge)
+
+### Connected Flows
+- Guides → Badge → Quote Visibility
+
+### End-point
+- Badge is active and shown on all future quote submissions.
+
+## 🔹 Module 11: Chat AI Prompt Booster
+### User Story
+ Boosts chat with AI-suggested questions or summaries during installer-homeowner interactions.
+### Inputs
+- Contextual quote + chat history
+
+### Outputs
+- Suggested messages (“Ask about inverter brand?”)
+- Optional auto-summary
+
+### Business Logic & Rules
+- Shown post-unlock
+- GPT API with current quote context
+- Optional toggle via Admin dashboard
+
+### Dependencies
+- GPT-4 API
+- Supabase Chat Table
+
+### Roles Involved
+- Homeowner, Installer
+
+### End-point
+- Suggestions rendered in chat UI after unlock
+
+## 🔹 Module 12: AI Bid Coach for Installers
+### User Story
+ Installers get GPT suggestions before submitting quotes, helping them optimize for win rate.
+### Inputs
+- Quote being drafted
+- Historical quote outcomes (success/failure)
+
+### Outputs
+- Inline GPT suggestions (“Lower price slightly”, “Add warranty note”)
+
+### Business Logic & Rules
+- Works pre-submission
+- Coach triggered when quote draft starts
+
+### Dependencies
+- GPT-4 API
+- Supabase Quotes Table
+
+### Roles Involved
+- Installer only
+
+### End-point
+- Suggestions rendered in quote builder UI
+
+## 🔹 Module 13: Quote Expiry Logic + Auto-Extend
+### User Story
+ Quotes auto-expire after 3 days unless engaged. System auto-extends if interest shown.
+### Inputs
+- Quote submission date
+- Interest trigger event
+
+### Outputs
+- Quote = “Expired” unless extended
+- New expiry date added if “I’m Interested” clicked
+
+### Business Logic & Rules
+- Expiry = 3 days post-submission
+- Auto-extension = 2 days if interest shown
+- Admin override toggle available
+
+### Dependencies
+- Supabase Quotes Table
+- Notifications (quote expiring soon)
+
+### Roles Involved
+- Homeowner (interest)
+- Admin (override)
+- Installer (view expiry)
+
+### End-point
+- Expired quotes hidden or labeled clearly
+
+## 🔹 Module 14: Admin Wallet Overview (Stripe Payouts)
+### User Story
+ Admin views real-time payout history, pending balances, and triggers payouts if required.
+### Inputs
+- Stripe API (balance, payout history)
+
+### Outputs
+- Payout report
+- Balance displayed
+- Optional “manual trigger” action
+
+### Business Logic & Rules
+- Display balance, pending, last payout
+- Optional payout history export
+- Logs action via system log table
+
+### Dependencies
+- Stripe API
+- Supabase Logs Table
+
+### Roles Involved
+- Admin only
+
+### Connected Flows
+- Commission Tracker → Wallet
+
+### End-point
+- Full financial clarity for platform operator
+
+Here is the updated module based on your existing format, with refined logic for completeness:
+
+## 🔹 Module 15: AI Assistant – Dual Role Conversational Bot
+
+### User Story
+ An interactive AI Assistant appears site-wide. For homeowners, it provides real-time help on rebates, quote types, installer trust, and comparison tools. For installers, it assists with quoting, bidding strategies, chat unlocking, and dashboard usage.
+
+### Inputs
+- Active user session + role (homeowner / installer)
+- Chat query input
+- Current page context (homepage, quote, chat, dashboard)
+- Optional user activity history (last viewed quote, guide read)
+
+### Outputs
+- GPT-4 generated contextual answers
+- Links to quote pages, calculators, or relevant UI flows
+- Smart FAQ auto-responses
+- Chat memory within session (can recall last 2–3 replies)
+
+### Business Logic & Rules
+- Assistant icon fixed bottom-right across all pages
+- Dual-mode logic:
+  - If Guest or Homeowner on public site: Homeowner Assistant mode
+  - If Homeowner logged in: Supports quote journey, badges, and chat issues
+  - If Installer in dashboard: Guides on submissions, bidding, payout tracker
+- Role passed to GPT as part of prompt
+- Logs feedback (👍/👎) for response quality
+- Admin panel allows:
+  - Feeding training examples
+  - Viewing flagged interactions
+  - Can suggest UI triggers (e.g., “Would you like to open your last quote?”)
+
+### Dependencies
+- GPT-4 API
+- Supabase session + role-based auth
+- Feedback table (ai_feedback)
+- Optional: Context memory cache (local/session)
+
+### Roles Involved
+- Homeowner – Help across quote journey
+- Installer – Help with dashboard and bid process
+- Admin – Track usage, improve prompts
+
+### Connected Flows
+- Appears site-wide (quote forms, dashboards, calculators)
+- Links to: Instant Estimator, Chat Module, Quote Builder
+- Prompts injected in Smart Buyer Guide and Bid Coach modules
+
+### End-point
+- Live GPT-powered chatbot
+- Dynamic replies based on session, page, and role context
+- Feedback optionally captured per session
+
+## This version is now production-aligned and scalable. Ready to update the next module (if needed)?
+
+Here is the refined and updated version of the Quote Versioning & Negotiation System module:
+
+Here is the updated version of the module with admin manual rollback removed and installer-controlled revert logic added:
+
+## 🔹 Module 16: Internal Quote Negotiation & Versioning System
+
+### User Story
+ Installers submitting written (pay-on-deal) quotes can revise, annotate, and resend quotes during negotiation. Homeowners receive notifications and can compare versions in a timeline view, helping with clarity and decision-making.
+
+### Inputs
+- Initial quote draft
+- Edit button or “Revise Quote” action
+- Installer comments (optional, per version)
+- Homeowner feedback or interest flag
+
+### Outputs
+- New quote version entry saved
+- Notification to homeowner (e.g., “Installer has updated their quote”)
+- Version timeline in homeowner dashboard
+- “Final Version” status locking trigger
+
+### Business Logic & Rules
+- Applies only to No Call/Written quote types
+- Quote Lifecycle: Draft → Submitted → Updated (multiple) → Final
+- Each edit logs a new row in QuoteVersions
+- Homeowners see:
+  - Visual changelog
+  - Installer message (optional)
+  - Accept or Flag option per version
+- Once installer marks quote as Final:
+  - Triggers deal stage
+  - Locks editing (installer-controlled)
+- Installers can revert to any earlier version using a “Revert to Previous Version” button
+  - Creates a new version identical to the selected one, marked RevertedByInstaller
+  - Tracked as a new edit in the version history
+- Admin does not interfere — oversight only
+
+### Dependencies
+- Supabase Quotes table
+- Supabase QuoteVersions table
+- Notification engine
+- Quote Comparison component (version toggle view)
+- Optional GPT: Smart suggestions during revision (AI-enhanced field tips)
+
+### Roles Involved
+- Installer – Create, edit, revert, submit final version
+- Homeowner – View, compare, accept/flag updates
+- Admin – Monitor integrity, no intervention required
+
+### Connected Flows
+- Begins from: Quote Builder Module
+- Feeds into: Deal Status Tracker, Commission Logic, Notifications
+
+### End-point
+- Status marked as Final
+- Homeowner notified
+- All quote versions remain viewable in timeline
+
+## This version keeps control with the installer while ensuring homeowner clarity and full version traceability. Ready for the next module: Smart Logs UI Access?
+
+Here is the final and production-aligned version of the Installer Quote Builder & Deal Closure Flow, now including battery brand as requested, and matching your strict privacy and monetisation model:
+
+## 🔹 Module 17: Installer Quote Builder & Deal Closure Flow (Secure Version)
+
+### User Story
+ Installers create detailed solar quotes for No Call/Written leads using a privacy-compliant builder form. Homeowners compare quotes anonymously. A 5% Stripe commission unlocks full contact and chat, triggering the deal.
+
+### Inputs
+- Installer ID (authenticated session)
+- Linked Lead ID (anonymous to installer)
+- Quote Form Fields:
+  - 📍 Site & Property Info
+    - Postcode
+    - Property Type (House, Apartment, Commercial)
+    - Roof Type (Tile, Metal, Flat, etc.)
+    - Roof Pitch & Orientation
+    - Shading Info (text-only)
+  - ⚡ Energy & Goals
+    - Monthly kWh or Quarterly Bill (AUD)
+    - Optional Target Savings (%)
+  - 🔧 System Configuration
+    - System Size (kW)
+    - Number of Panels
+    - Panel Brand/Model
+    - Inverter Brand/Model
+    - Battery Included (Yes/No)
+    - Battery Brand/Model
+    - Battery Capacity (kWh)
+    - Mounting Type
+  - 💵 Pricing & BOM
+    - Total System Price ($)
+    - Optional Cost Breakdown (Panels, Inverter, Labor, etc.)
+    - Any Applied Discounts (%)
+  - 📈 Financial & Rebate Info
+    - Estimated Rebate ($)
+    - Payback Period (Years)
+    - Financing Options (Upfront, Lease, Loan)
+  - 🕒 Timeline & Guarantees
+    - Estimated Installation Start/End Dates
+    - Warranty Details (Panel, Inverter, Workmanship)
+  - 💬 Installer Message (Optional)
+    - Text only – no links, emails, or phone numbers
+    - Auto-screened by Regex/GPT filter
+    - Admin can flag or ban violators
+
+### Outputs
+- Quote version saved with timestamp
+- Visible to homeowner in comparison dashboard
+- Homeowner notified of new or updated quote
+- Admin logs activity for compliance
+
+### Business Logic & Rules
+- Works only for No Call/Written leads
+- Each submission creates a new QuoteVersion
+- Final Version locks editing
+- Homeowners can:
+  - View all versions
+  - Compare specs
+  - Click “I’m Interested” to proceed
+- Stripe 5% commission unlocks:
+  - Installer contact info
+  - Chat panel
+  - Status = Deal Started
+- Admin can moderate message field but not edit quotes
+
+### Security Rules
+- ❌ No file uploads allowed (prevents contact leaks)
+- 💬 Installer Message:
+  - Auto-flag if it includes @, .com, phone patterns
+  - GPT moderation for smart filtering
+- 🚫 Contact info sharing = immediate flag, admin review, and possible ban
+
+### Dependencies
+- Supabase Tables: quotes, quote_versions, leads, users, installers
+- Stripe API for payment + webhook for unlock
+- Notification engine
+- GPT API (optional) for message moderation
+
+### Roles Involved
+- Installer – Fill, submit, revise quote; mark “Final”
+- Homeowner – View quotes, compare, pay to unlock
+- Admin – Monitor logs, flag issues, enforce policy
+
+### Connected Flows
+- Follows: Installer Lead Feed
+- Leads to: Quote Comparison View, Stripe Commission Flow, Chat Module, Deal Tracker
+
+### End-point
+- Quote saved and versioned
+- Stripe 5% unlock = status set to Deal Started
+- Chat and contact info revealed
+- Admin activity logs updated
+
+## Let me know when you're ready to export this as a Supabase schema, frontend form design, or execution log row for Excel.
+
+## 🔹 Module 18: Smart Logs – Admin UI Access & Audit Panel
+
+### User Story
+ Admins view a detailed activity log of platform events (leads, quotes, payments, chats) in a searchable, filterable interface to support moderation, debugging, and audits.
+
+### Inputs
+- Admin Authenticated Session (Supabase role = admin)
+- Filters:
+  - Date Range
+  - Event Type (e.g. “Quote Submitted”, “Chat Unlocked”)
+  - User ID or Role
+  - Severity (Info, Warning, Error)
+  - Search Query (Free text)
+
+### Outputs
+- UI Table of logs with:
+  - Timestamp
+  - User ID
+  - Role
+  - Event Type
+  - Module (e.g., Lead, Quote, Chat)
+  - JSON Payload or event metadata
+  - Optional manual flag or note per log row
+  - Export: CSV or JSON
+
+### Business Logic & Rules
+- Log Types Tracked:
+  - Lead creation/update
+  - Quote submission/versioning
+  - Stripe webhooks (payment received, deal started)
+  - Chat opened, unlocked
+  - Login attempts or OTP events
+- Admins only (role-verified)
+- Features:
+  - Sort by timestamp or severity
+  - Filter by user, event, module
+  - Flag events for review
+- Each log stored in system_logs table
+- Route protected: /admin/logs
+- Export triggers file download with filter context
+
+### Dependencies
+- Supabase Table: system_logs
+- Admin Dashboard UI (React/Next.js)
+- Optional GPT filter for flag auto-suggestions
+- Client-side CSV export utility
+
+### Roles Involved
+- Admin – View, filter, flag, export logs
+
+### Connected Flows
+- Triggered by: Any platform event
+- Viewed from: Admin Dashboard → Logs Section
+- Related to:
+  - Installer Manager (e.g. approval actions)
+  - Quote Tracker (quote versioning)
+  - Stripe Webhooks (deal/payments)
+  - Chat (unlock and moderation triggers)
+
+### End-point
+- /admin/logs – Admin dashboard route
+- Displays filtered logs with full audit info
+- Flag/Export functions available per row or batch
+
+## 🔹Module 19: AI Personalisation Memory – Recent Activity Recall
+
+### User Story
+ To build trust and relevance, the AI Assistant (for both homeowners and installers) remembers each user’s recent activity—like viewed quotes, guides read, past questions, and last quote draft—so it can offer more personalised, contextual help during sessions.
+
+### Inputs
+- User ID and session (auth required)
+- Contextual events from:
+  - Guide views
+  - Quote comparison clicks
+  - Last submitted or drafted quote
+  - Last 3 chat messages (AI or human)
+  - Installer dashboard actions
+
+### Outputs
+- Context-aware GPT replies
+- Smart suggestions based on past steps:
+  - “Want to revisit your last quote?”
+  - “Still deciding between 5kW and 6.6kW systems?”
+  - “Need help finalising your draft?”
+- Optional: Suggested quick actions or CTA links
+
+### Business Logic & Rules
+- Recent activity = last 5 events, stored in local/session memory or backend cache
+- No long-term memory required (session-based for privacy compliance)
+- Role-specific prompts:
+  - Homeowner Mode: Remembers rebates searched, guides read, compared quotes
+  - Installer Mode: Remembers last quote draft, Bid Coach suggestions, unlocked leads
+- GPT prompt dynamically assembled with:
+  - Role
+  - Page
+  - Last few events
+- Admin has toggle to disable memory
+
+### Dependencies
+- Supabase session + auth
+- Supabase table or local cache for ai_recent_activity
+- GPT-4 API with injected prompt memory
+- Optional memory viewer in Admin panel
+
+### Roles Involved
+- Homeowner – Receives personalised help on rebates, quote decisions, or chat
+- Installer – Gets contextual tips on quoting, bidding, dashboard usage
+- Admin – Can toggle memory use or reset memory per user
+
+### Connected Flows
+- Appears inside: AI Assistant component (site-wide)
+- Informs: Smart Buyer Coach, Bid Coach, Quote Reminder Bot
+- Logs: Memory interactions for GPT quality tuning
+
+### End-point
+- AI Assistant loads memory-based prompt
+- GPT reply adapts tone and suggestions based on session history
+- User receives smarter, faster, more relevant help
+
+## 🔁 Steps Needing Update
+| Step | What to Update |
+| ---- | --------------- |
+| Step 3 (MVP Features) | Add “AI Assistant Memory Recall” under Homeowner and Installer Features |
+| Step 6 (Admin Tools) | Add toggle for memory activation, with user session view option |
+| Step 7 (Security Rules) | Note that AI memory is session-only (not persistent) and does not violate privacy compliance |
+
+This feature will dramatically improve perceived intelligence and friendliness of the platform — without breaching anonymity or trust.
+
+

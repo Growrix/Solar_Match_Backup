@@ -1,4 +1,4 @@
-// File: D:\Desktop Mass\SOLAR LEAD GEN PROJECT MAIN FILE\BOLT PROJECT\LAST DAY WITH THE BOLT\project-bolt-sb1-muzwcckc (6)\project next js\app\layout.tsx
+// File: D:\Desktop Mass\SOLAR LEAD GEN PROJECT MAIN FILE\BOLT PROJECT\LAST DAY WITH THE BOLT\SolarMatch Next.js Project\project next js\app\layout.tsx
 import * as entry from '../../../app/layout.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

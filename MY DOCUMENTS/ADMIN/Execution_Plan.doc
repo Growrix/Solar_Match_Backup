@@ -1,0 +1,109 @@
+# Admin Feature Execution Plan for SolarMatch Next.js
+
+## 1. Project Structure & Setup
+- Create an `admin/` route group under `app/` for all admin pages.
+- Ensure RBAC (Role-Based Access Control) is enforced in middleware and layouts.
+- Set up protected layouts and server-side checks for admin-only access.
+
+## 2. Core Admin Dashboard
+- Build a central dashboard page summarizing:
+  - Pending approvals (installers, homeowners)
+  - Recent quotes, deals, payments
+  - Platform activity logs
+- Use cards, tables, and charts for quick overviews.
+
+## 3. Feature Modules Implementation
+
+### 3.1 Installer Management
+- List all installers with status filters (pending, approved, suspended).
+- Approve, suspend, or edit installer profiles.
+- View submitted documents and trigger status updates.
+
+### 3.2 Lead Oversight
+- Table of all homeowner quote requests and statuses.
+- Ability to override visibility or reassign leads.
+
+### 3.3 Quote Tracker
+- List all submitted quotes with version history.
+- Sort/filter by lead ID, date, installer, or version.
+
+### 3.4 Deal Monitor
+- Track quotes that became deals.
+- Confirm payments, force unlocks if needed.
+
+### 3.5 Commissions Tracker
+- Integrate with Stripe API to show payments and commissions.
+- Display paid/unpaid status, resend Stripe triggers.
+
+### 3.6 Smart Logs Viewer
+- Show platform activity logs (quotes, chats, payments, etc.).
+- Filter logs by role, module, user ID, or date.
+- Export logs to CSV/JSON.
+- Flag logs for review, add manual notes.
+
+### 3.7 Pop-Up Campaign Builder
+- UI to create and schedule promotional pop-ups.
+- Target by postcode, time, or user behavior.
+
+### 3.8 Content Manager (CMS)
+- WYSIWYG editor for guides, blogs, FAQs.
+- Publish, edit, and delete content.
+
+### 3.9 Blog Post Management (with AI)
+- Create, edit, schedule, and delete blog posts.
+- Option to generate blog posts using AI (admin provides topic/keywords).
+- Schedule AI-generated or manual posts for future publishing.
+- View and manage scheduled, drafted, and published posts.
+
+### 3.10 Feature Toggles
+- Admin UI to enable/disable experimental modules live.
+- Safe release and rollback of features.
+
+### 3.11 Notification Manager
+- Send manual or automated alerts to users.
+- Integrate with Supabase event logic for delivery.
+
+### 3.12 Chat Monitor
+- View flagged or abuse-reported chats.
+- Moderate and resolve issues.
+
+### 3.13 AI Feedback Tracker
+- List AI responses that were liked or flagged.
+- Use for quality improvement.
+
+### 3.14 Manual Override Panel
+- Unlock quotes, extend expiries, adjust deals.
+- Log all actions for accountability.
+
+### 3.15 AI Assistant Memory Toggle
+- Enable/disable session-based AI memory recall for users.
+
+## 4. Admin Tools & Utilities
+- System logs access (admin-only RLS on `system_logs` table).
+- Stripe payout log: view payout history, balances, errors.
+- Rate limiting for sensitive admin actions.
+
+## 5. Security & Compliance
+- Enforce RBAC at all API and UI entry points.
+- Audit logs for all admin actions.
+- Exportable logs for compliance and debugging.
+
+## 6. Scalability & Maintenance
+- Notification system: polling or cron-triggered delivery.
+- Feature toggles for safe releases.
+- Modularize code for easy future enhancements.
+
+## 7. Development Workflow
+- Build each module as a separate React component/page under `app/admin/`.
+- Use TypeScript and Tailwind CSS for consistency.
+- Write unit and integration tests for all admin features.
+- Document all APIs and admin workflows in the codebase.
+
+## 8. Deployment & Monitoring
+- Deploy admin features to staging for QA.
+- Monitor logs and user feedback post-launch.
+- Iterate based on real admin usage and audit needs.
+
+---
+
+This plan ensures a robust, secure, and scalable Admin system, fully integrated with the SolarMatch Next.js architecture and best practices.
