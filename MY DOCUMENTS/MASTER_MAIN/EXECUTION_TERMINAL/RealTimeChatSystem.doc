@@ -1,0 +1,1670 @@
+# REAL-TIME CHAT SYSTEM - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** HIGH - EXECUTE AFTER DATABASE SCHEMA  
+**Dependencies:** DatabaseSchemaImplementation.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Implement real-time chat system with Supabase Realtime for installer-homeowner communication
+**Estimated Time:** 2-3 days
+**Risk Level:** MEDIUM (Real-time complexity)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Configure Supabase Realtime subscriptions
+2. Create real-time message hooks and services
+3. Implement chat room management
+4. Build message history and read receipts
+5. Add file sharing capabilities
+
+---
+
+## 🎯 CHAT SYSTEM REQUIREMENTS
+
+**Core Features:**
+- ✅ Real-time messaging between installers and homeowners
+- ✅ Chat room creation triggered by lead unlock
+- ✅ Message history persistence
+- ✅ Read receipt tracking
+- ✅ File and image sharing
+- ✅ Message moderation and filtering
+- ✅ Admin chat oversight
+
+**Technical Stack:**
+- Supabase Realtime for WebSocket connections
+- React hooks for real-time updates
+- File upload to Supabase Storage
+- Content moderation APIs
+
+---
+
+## 🔧 DEVELOPER EXECUTION STEPS
+
+### STEP 1: Supabase Realtime Configuration
+**DEVELOPER ACTION:** Create real-time service for chat functionality
+
+**File Path:** `lib/services/realtimeService.ts`
+**Command:** Create this file with complete real-time implementation:
+
+```typescript
+import { createClient } from '@/lib/supabase'
+import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
+import type { Message, ChatRoom } from '@/types/database.types'
+
+export class RealtimeService {
+  private supabase = createClient()
+  private channels: Map<string, RealtimeChannel> = new Map()
+
+  // Subscribe to chat room messages
+  subscribeToMessages(
+    chatRoomId: string,
+    onMessage: (message: Message) => void,
+    onError?: (error: any) => void
+  ): () => void {
+    const channelName = `chat_room_${chatRoomId}`
+    
+    // Remove existing channel if it exists
+    if (this.channels.has(channelName)) {
+      this.unsubscribeFromMessages(chatRoomId)
+    }
+
+    // Create new channel
+    const channel = this.supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_room_id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Message>) => {
+          if (payload.new) {
+            onMessage(payload.new as Message)
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_room_id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Message>) => {
+          if (payload.new) {
+            onMessage(payload.new as Message)
+          }
+        }
+      )
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log(`✅ Subscribed to chat room: ${chatRoomId}`)
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error(`❌ Chat subscription error: ${chatRoomId}`)
+          onError?.(new Error('Chat subscription failed'))
+        }
+      })
+
+    this.channels.set(channelName, channel)
+
+    // Return unsubscribe function
+    return () => this.unsubscribeFromMessages(chatRoomId)
+  }
+
+  // Unsubscribe from chat room
+  unsubscribeFromMessages(chatRoomId: string): void {
+    const channelName = `chat_room_${chatRoomId}`
+    const channel = this.channels.get(channelName)
+    
+    if (channel) {
+      this.supabase.removeChannel(channel)
+      this.channels.delete(channelName)
+      console.log(`🔌 Unsubscribed from chat room: ${chatRoomId}`)
+    }
+  }
+
+  // Subscribe to user's chat rooms list
+  subscribeToUserChatRooms(
+    userId: string,
+    onChatRoomChange: (chatRoom: ChatRoom) => void
+  ): () => void {
+    const channelName = `user_chat_rooms_${userId}`
+
+    const channel = this.supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_rooms',
+          filter: `homeowner_id=eq.${userId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<ChatRoom>) => {
+          if (payload.new) {
+            onChatRoomChange(payload.new as ChatRoom)
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'chat_rooms',
+          filter: `installer_id=eq.${userId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<ChatRoom>) => {
+          if (payload.new) {
+            onChatRoomChange(payload.new as ChatRoom)
+          }
+        }
+      )
+      .subscribe()
+
+    this.channels.set(channelName, channel)
+
+    return () => {
+      this.supabase.removeChannel(channel)
+      this.channels.delete(channelName)
+    }
+  }
+
+  // Clean up all subscriptions
+  cleanup(): void {
+    this.channels.forEach((channel, channelName) => {
+      this.supabase.removeChannel(channel)
+      console.log(`🔌 Cleaned up channel: ${channelName}`)
+    })
+    this.channels.clear()
+  }
+}
+
+// Singleton instance
+export const realtimeService = new RealtimeService()
+```
+
+**VERIFICATION:** Test real-time configuration:
+```bash
+npm run build
+```
+
+**STOP & CONFIRM:** Verify no TypeScript errors before proceeding.
+
+  /**
+   * Subscribe to chat room messages
+   */
+  subscribeToMessages(
+    chatRoomId: string,
+    onMessage: (message: Message) => void,
+    onUpdate: (message: Message) => void,
+    onDelete: (messageId: string) => void
+  ): () => void {
+    const channelName = `messages:${chatRoomId}`
+    
+    // Remove existing channel if exists
+    if (this.channels.has(channelName)) {
+      this.channels.get(channelName)?.unsubscribe()
+      this.channels.delete(channelName)
+    }
+
+    const channel = this.supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_room_id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Message>) => {
+          onMessage(payload.new)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_room_id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Message>) => {
+          onUpdate(payload.new)
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_room_id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<Message>) => {
+          onDelete(payload.old.id)
+        }
+      )
+      .subscribe()
+
+    this.channels.set(channelName, channel)
+
+    // Return cleanup function
+    return () => {
+      channel.unsubscribe()
+      this.channels.delete(channelName)
+    }
+  }
+
+  /**
+   * Subscribe to chat room status updates
+   */
+  subscribeToChatRoomUpdates(
+    chatRoomId: string,
+    onUpdate: (chatRoom: ChatRoom) => void
+  ): () => void {
+    const channelName = `chat_room:${chatRoomId}`
+    
+    if (this.channels.has(channelName)) {
+      this.channels.get(channelName)?.unsubscribe()
+      this.channels.delete(channelName)
+    }
+
+    const channel = this.supabase
+      .channel(channelName)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'chat_rooms',
+          filter: `id=eq.${chatRoomId}`,
+        },
+        (payload: RealtimePostgresChangesPayload<ChatRoom>) => {
+          onUpdate(payload.new)
+        }
+      )
+      .subscribe()
+
+    this.channels.set(channelName, channel)
+
+    return () => {
+      channel.unsubscribe()
+      this.channels.delete(channelName)
+    }
+  }
+
+  /**
+   * Subscribe to user presence in chat room
+   */
+  subscribeToPresence(
+    chatRoomId: string,
+    userId: string,
+    userInfo: { name: string; avatar?: string },
+    onPresenceUpdate: (presenceState: any) => void
+  ): () => void {
+    const channelName = `presence:${chatRoomId}`
+    
+    if (this.channels.has(channelName)) {
+      this.channels.get(channelName)?.unsubscribe()
+      this.channels.delete(channelName)
+    }
+
+    const channel = this.supabase
+      .channel(channelName)
+      .on('presence', { event: 'sync' }, () => {
+        const presenceState = channel.presenceState()
+        onPresenceUpdate(presenceState)
+      })
+      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+        const presenceState = channel.presenceState()
+        onPresenceUpdate(presenceState)
+      })
+      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+        const presenceState = channel.presenceState()
+        onPresenceUpdate(presenceState)
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({
+            userId,
+            ...userInfo,
+            onlineAt: new Date().toISOString(),
+          })
+        }
+      })
+
+    this.channels.set(channelName, channel)
+
+    return () => {
+      channel.unsubscribe()
+      this.channels.delete(channelName)
+    }
+  }
+
+  /**
+   * Cleanup all subscriptions
+   */
+  cleanup(): void {
+    this.channels.forEach((channel) => {
+      channel.unsubscribe()
+    })
+    this.channels.clear()
+  }
+}
+
+// Export singleton instance
+export const realtimeService = new RealtimeService()
+```
+
+### STEP 2: Chat Service Implementation
+**Timeline:** Day 1 Afternoon
+**Files:** `lib/services/chatService.ts`
+
+```typescript
+// lib/services/chatService.ts
+import { createClient } from '@/lib/supabase'
+import type { 
+  ChatRoom, 
+  Message, 
+  MessageReadStatus,
+  InsertChatRoom,
+  InsertMessage 
+} from '@/types/database.types'
+
+export class ChatService {
+  private supabase = createClient()
+
+  /**
+   * Create or get existing chat room
+   */
+  async createOrGetChatRoom(
+    homeownerId: string,
+    installerId: string,
+    quoteId: string,
+    leadType: 'call_visit' | 'written'
+  ): Promise<ChatRoom> {
+    try {
+      // Check if chat room already exists
+      const { data: existingRoom, error: fetchError } = await this.supabase
+        .from('chat_rooms')
+        .select('*')
+        .eq('homeowner_id', homeownerId)
+        .eq('installer_id', installerId)
+        .eq('quote_id', quoteId)
+        .single()
+
+      if (existingRoom && !fetchError) {
+        return existingRoom
+      }
+
+      // Create new chat room
+      const { data: newRoom, error: createError } = await this.supabase
+        .from('chat_rooms')
+        .insert({
+          homeowner_id: homeownerId,
+          installer_id: installerId,
+          quote_id: quoteId,
+          lead_type: leadType,
+          status: 'active',
+          unlocked_at: new Date().toISOString(),
+        } as InsertChatRoom)
+        .select()
+        .single()
+
+      if (createError || !newRoom) {
+        throw new Error('Failed to create chat room')
+      }
+
+      // Send welcome message
+      await this.sendSystemMessage(
+        newRoom.id,
+        'Chat unlocked! You can now communicate directly with each other about this solar installation project.'
+      )
+
+      return newRoom
+    } catch (error) {
+      console.error('Error creating chat room:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Send a message
+   */
+  async sendMessage(
+    chatRoomId: string,
+    senderId: string,
+    senderType: 'homeowner' | 'installer' | 'admin',
+    content: string,
+    messageType: 'text' | 'image' | 'file' = 'text'
+  ): Promise<Message> {
+    try {
+      // Content moderation check
+      const moderatedContent = await this.moderateContent(content)
+
+      const { data: message, error } = await this.supabase
+        .from('messages')
+        .insert({
+          chat_room_id: chatRoomId,
+          sender_id: senderId,
+          sender_type: senderType,
+          content: moderatedContent.filtered ? moderatedContent.content : content,
+          message_type: messageType,
+          filtered: moderatedContent.filtered,
+          original_content: moderatedContent.filtered ? content : null,
+        } as InsertMessage)
+        .select()
+        .single()
+
+      if (error || !message) {
+        throw new Error('Failed to send message')
+      }
+
+      // Update chat room timestamp
+      await this.supabase
+        .from('chat_rooms')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', chatRoomId)
+
+      return message
+    } catch (error) {
+      console.error('Error sending message:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Send system message
+   */
+  async sendSystemMessage(
+    chatRoomId: string,
+    content: string
+  ): Promise<void> {
+    try {
+      await this.supabase
+        .from('messages')
+        .insert({
+          chat_room_id: chatRoomId,
+          sender_id: '00000000-0000-0000-0000-000000000000', // System UUID
+          sender_type: 'admin',
+          content,
+          message_type: 'system',
+        } as InsertMessage)
+    } catch (error) {
+      console.error('Error sending system message:', error)
+    }
+  }
+
+  /**
+   * Get chat room messages with pagination
+   */
+  async getMessages(
+    chatRoomId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<Message[]> {
+    try {
+      const { data: messages, error } = await this.supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_room_id', chatRoomId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
+
+      if (error) {
+        throw new Error('Failed to fetch messages')
+      }
+
+      return messages || []
+    } catch (error) {
+      console.error('Error fetching messages:', error)
+      return []
+    }
+  }
+
+  /**
+   * Mark messages as read
+   */
+  async markMessagesAsRead(
+    chatRoomId: string,
+    userId: string,
+    messageIds: string[]
+  ): Promise<void> {
+    try {
+      const readStatuses = messageIds.map(messageId => ({
+        message_id: messageId,
+        user_id: userId,
+      }))
+
+      await this.supabase
+        .from('message_read_status')
+        .upsert(readStatuses, { onConflict: 'message_id,user_id' })
+    } catch (error) {
+      console.error('Error marking messages as read:', error)
+    }
+  }
+
+  /**
+   * Get unread message count
+   */
+  async getUnreadCount(
+    chatRoomId: string,
+    userId: string
+  ): Promise<number> {
+    try {
+      const { count, error } = await this.supabase
+        .from('messages')
+        .select('id', { count: 'exact' })
+        .eq('chat_room_id', chatRoomId)
+        .neq('sender_id', userId)
+        .not('id', 'in', 
+          `(SELECT message_id FROM message_read_status WHERE user_id = '${userId}')`
+        )
+
+      if (error) {
+        throw new Error('Failed to get unread count')
+      }
+
+      return count || 0
+    } catch (error) {
+      console.error('Error getting unread count:', error)
+      return 0
+    }
+  }
+
+  /**
+   * Get user's chat rooms
+   */
+  async getUserChatRooms(
+    userId: string,
+    userType: 'homeowner' | 'installer'
+  ): Promise<ChatRoom[]> {
+    try {
+      const field = userType === 'homeowner' ? 'homeowner_id' : 'installer_id'
+      
+      const { data: chatRooms, error } = await this.supabase
+        .from('chat_rooms')
+        .select(`
+          *,
+          solar_quotes!inner(
+            id,
+            system_size,
+            property_address,
+            created_at
+          )
+        `)
+        .eq(field, userId)
+        .eq('status', 'active')
+        .order('updated_at', { ascending: false })
+
+      if (error) {
+        throw new Error('Failed to fetch chat rooms')
+      }
+
+      return chatRooms || []
+    } catch (error) {
+      console.error('Error fetching chat rooms:', error)
+      return []
+    }
+  }
+
+  /**
+   * Upload file to chat
+   */
+  async uploadFile(
+    chatRoomId: string,
+    file: File,
+    senderId: string,
+    senderType: 'homeowner' | 'installer'
+  ): Promise<{ url: string; message: Message }> {
+    try {
+      // Validate file
+      if (file.size > 10 * 1024 * 1024) { // 10MB limit
+        throw new Error('File size too large (max 10MB)')
+      }
+
+      const allowedTypes = [
+        'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+        'application/pdf', 'text/plain', 'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ]
+
+      if (!allowedTypes.includes(file.type)) {
+        throw new Error('File type not allowed')
+      }
+
+      // Generate unique filename
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${chatRoomId}/${Date.now()}-${Math.random().toString(36).substr(2, 9)}.${fileExt}`
+
+      // Upload to Supabase Storage
+      const { data: uploadData, error: uploadError } = await this.supabase.storage
+        .from('chat-files')
+        .upload(fileName, file)
+
+      if (uploadError) {
+        throw new Error('Failed to upload file')
+      }
+
+      // Get public URL
+      const { data: { publicUrl } } = this.supabase.storage
+        .from('chat-files')
+        .getPublicUrl(fileName)
+
+      // Send message with file
+      const messageType = file.type.startsWith('image/') ? 'image' : 'file'
+      const content = file.type.startsWith('image/') 
+        ? `![${file.name}](${publicUrl})`
+        : `[${file.name}](${publicUrl})`
+
+      const message = await this.sendMessage(
+        chatRoomId,
+        senderId,
+        senderType,
+        content,
+        messageType
+      )
+
+      return { url: publicUrl, message }
+    } catch (error) {
+      console.error('Error uploading file:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Flag message for moderation
+   */
+  async flagMessage(
+    messageId: string,
+    flaggedBy: string,
+    reason: string
+  ): Promise<void> {
+    try {
+      // Update message
+      await this.supabase
+        .from('messages')
+        .update({
+          flagged: true,
+          flagged_by: flaggedBy,
+          flagged_reason: reason,
+        })
+        .eq('id', messageId)
+
+      // Get chat room for logging
+      const { data: message } = await this.supabase
+        .from('messages')
+        .select('chat_room_id')
+        .eq('id', messageId)
+        .single()
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'chat',
+        p_event_type: 'message_flagged',
+        p_message: `Message flagged for moderation: ${reason}`,
+        p_severity: 'warning',
+        p_user_id: flaggedBy,
+        p_details: {
+          messageId,
+          reason,
+          chatRoomId: message?.chat_room_id,
+        },
+      })
+    } catch (error) {
+      console.error('Error flagging message:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Content moderation
+   */
+  private async moderateContent(content: string): Promise<{
+    content: string
+    filtered: boolean
+  }> {
+    try {
+      // Simple profanity filter (replace with more sophisticated solution)
+      const profanityList = [
+        'damn', 'hell', 'crap', 'shit', 'fuck', 'bitch', 'bastard'
+        // Add more as needed
+      ]
+
+      let filteredContent = content
+      let isFiltered = false
+
+      profanityList.forEach(word => {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi')
+        if (regex.test(filteredContent)) {
+          filteredContent = filteredContent.replace(regex, '*'.repeat(word.length))
+          isFiltered = true
+        }
+      })
+
+      // Check for phone numbers and email addresses
+      const phoneRegex = /(\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})/g
+      const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g
+
+      if (phoneRegex.test(content) || emailRegex.test(content)) {
+        // Allow contact info but log for monitoring
+        await this.supabase.rpc('log_event', {
+          p_category: 'chat',
+          p_event_type: 'contact_info_shared',
+          p_message: 'Contact information shared in chat',
+          p_severity: 'info',
+          p_details: { hasPhone: phoneRegex.test(content), hasEmail: emailRegex.test(content) },
+        })
+      }
+
+      return {
+        content: filteredContent,
+        filtered: isFiltered,
+      }
+    } catch (error) {
+      console.error('Error moderating content:', error)
+      return { content, filtered: false }
+    }
+  }
+}
+
+// Export singleton instance
+export const chatService = new ChatService()
+```
+
+### STEP 3: Chat Hook Implementation
+**Timeline:** Day 2 Morning
+**Files:** `hooks/useChat.ts`
+
+```typescript
+// hooks/useChat.ts
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { chatService } from '@/lib/services/chatService'
+import { realtimeService } from '@/lib/realtimeService'
+import type { Message, ChatRoom } from '@/types/database.types'
+
+export interface UseChatOptions {
+  chatRoomId: string
+  userId: string
+  userType: 'homeowner' | 'installer'
+  onMessageReceived?: (message: Message) => void
+}
+
+export function useChat({ 
+  chatRoomId, 
+  userId, 
+  userType,
+  onMessageReceived 
+}: UseChatOptions) {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isConnected, setIsConnected] = useState(false)
+  const [presenceState, setPresenceState] = useState<any>({})
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const cleanupRef = useRef<(() => void)[]>([])
+
+  // Scroll to bottom
+  const scrollToBottom = useCallback(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [])
+
+  // Load initial messages
+  useEffect(() => {
+    if (!chatRoomId) return
+
+    const loadMessages = async () => {
+      try {
+        setIsLoading(true)
+        const initialMessages = await chatService.getMessages(chatRoomId, 50, 0)
+        setMessages(initialMessages.reverse()) // Reverse to show chronological order
+        
+        // Get unread count
+        const count = await chatService.getUnreadCount(chatRoomId, userId)
+        setUnreadCount(count)
+        
+        setError(null)
+      } catch (err) {
+        setError('Failed to load messages')
+        console.error('Error loading messages:', err)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    loadMessages()
+  }, [chatRoomId, userId])
+
+  // Setup real-time subscriptions
+  useEffect(() => {
+    if (!chatRoomId || !userId) return
+
+    // Subscribe to new messages
+    const unsubscribeMessages = realtimeService.subscribeToMessages(
+      chatRoomId,
+      (newMessage) => {
+        setMessages(prev => [...prev, newMessage])
+        onMessageReceived?.(newMessage)
+        
+        // Update unread count if message is from someone else
+        if (newMessage.sender_id !== userId) {
+          setUnreadCount(prev => prev + 1)
+        }
+        
+        // Auto-scroll if user is near bottom
+        setTimeout(scrollToBottom, 100)
+      },
+      (updatedMessage) => {
+        setMessages(prev => 
+          prev.map(msg => msg.id === updatedMessage.id ? updatedMessage : msg)
+        )
+      },
+      (deletedMessageId) => {
+        setMessages(prev => prev.filter(msg => msg.id !== deletedMessageId))
+      }
+    )
+
+    // Subscribe to presence
+    const unsubscribePresence = realtimeService.subscribeToPresence(
+      chatRoomId,
+      userId,
+      { name: 'User' }, // You might want to pass actual user name
+      (newPresenceState) => {
+        setPresenceState(newPresenceState)
+        setIsConnected(Object.keys(newPresenceState).length > 0)
+      }
+    )
+
+    cleanupRef.current = [unsubscribeMessages, unsubscribePresence]
+
+    return () => {
+      cleanupRef.current.forEach(cleanup => cleanup())
+      cleanupRef.current = []
+    }
+  }, [chatRoomId, userId, onMessageReceived, scrollToBottom])
+
+  // Send message
+  const sendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || !chatRoomId) return
+
+    try {
+      await chatService.sendMessage(
+        chatRoomId,
+        userId,
+        userType,
+        content.trim()
+      )
+    } catch (err) {
+      setError('Failed to send message')
+      console.error('Error sending message:', err)
+    }
+  }, [chatRoomId, userId, userType])
+
+  // Upload file
+  const uploadFile = useCallback(async (file: File) => {
+    if (!file || !chatRoomId) return
+
+    try {
+      await chatService.uploadFile(chatRoomId, file, userId, userType)
+    } catch (err) {
+      setError('Failed to upload file')
+      console.error('Error uploading file:', err)
+    }
+  }, [chatRoomId, userId, userType])
+
+  // Mark messages as read
+  const markAsRead = useCallback(async (messageIds?: string[]) => {
+    if (!chatRoomId) return
+
+    try {
+      const idsToMark = messageIds || 
+        messages
+          .filter(msg => msg.sender_id !== userId)
+          .map(msg => msg.id)
+
+      if (idsToMark.length > 0) {
+        await chatService.markMessagesAsRead(chatRoomId, userId, idsToMark)
+        setUnreadCount(0)
+      }
+    } catch (err) {
+      console.error('Error marking messages as read:', err)
+    }
+  }, [chatRoomId, userId, messages])
+
+  // Flag message
+  const flagMessage = useCallback(async (messageId: string, reason: string) => {
+    try {
+      await chatService.flagMessage(messageId, userId, reason)
+    } catch (err) {
+      setError('Failed to flag message')
+      console.error('Error flagging message:', err)
+    }
+  }, [userId])
+
+  // Clear error
+  const clearError = useCallback(() => {
+    setError(null)
+  }, [])
+
+  return {
+    messages,
+    isLoading,
+    isConnected,
+    presenceState,
+    unreadCount,
+    error,
+    messagesEndRef,
+    sendMessage,
+    uploadFile,
+    markAsRead,
+    flagMessage,
+    scrollToBottom,
+    clearError,
+  }
+}
+```
+
+### STEP 4: Chat UI Components
+**Timeline:** Day 2 Afternoon to Day 3
+**Files:** Multiple React components
+
+**Main Chat Window Component:**
+```typescript
+// components/chat/ChatWindow.tsx
+'use client'
+
+import { useState, useRef, useEffect } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { 
+  Popover, 
+  PopoverContent, 
+  PopoverTrigger 
+} from '@/components/ui/popover'
+import { 
+  Send, 
+  Paperclip, 
+  Image, 
+  Flag, 
+  MoreVertical,
+  Users,
+} from 'lucide-react'
+import { useChat } from '@/hooks/useChat'
+import { ChatMessage } from './ChatMessage'
+import { TypingIndicator } from './TypingIndicator'
+import { useToast } from '@/components/ui/use-toast'
+import type { ChatRoom } from '@/types/database.types'
+
+interface ChatWindowProps {
+  chatRoom: ChatRoom
+  userId: string
+  userType: 'homeowner' | 'installer'
+  className?: string
+}
+
+export function ChatWindow({ 
+  chatRoom, 
+  userId, 
+  userType, 
+  className 
+}: ChatWindowProps) {
+  const [messageInput, setMessageInput] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const { toast } = useToast()
+
+  const {
+    messages,
+    isLoading,
+    isConnected,
+    presenceState,
+    unreadCount,
+    error,
+    messagesEndRef,
+    sendMessage,
+    uploadFile,
+    markAsRead,
+    flagMessage,
+    scrollToBottom,
+    clearError,
+  } = useChat({
+    chatRoomId: chatRoom.id,
+    userId,
+    userType,
+    onMessageReceived: (message) => {
+      // Show notification for messages from others
+      if (message.sender_id !== userId) {
+        toast({
+          title: 'New message',
+          description: message.content.substring(0, 50) + '...',
+        })
+      }
+    },
+  })
+
+  // Mark messages as read when component mounts or messages change
+  useEffect(() => {
+    if (messages.length > 0 && unreadCount > 0) {
+      markAsRead()
+    }
+  }, [messages, unreadCount, markAsRead])
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return
+
+    await sendMessage(messageInput)
+    setMessageInput('')
+  }
+
+  const handleKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSendMessage()
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    try {
+      await uploadFile(file)
+      toast({
+        title: 'File uploaded',
+        description: 'Your file has been shared successfully',
+      })
+    } catch (err) {
+      toast({
+        title: 'Upload failed',
+        description: 'Failed to upload file. Please try again.',
+        variant: 'destructive',
+      })
+    }
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleFlagMessage = async (messageId: string) => {
+    try {
+      await flagMessage(messageId, 'Inappropriate content')
+      toast({
+        title: 'Message flagged',
+        description: 'The message has been reported for review',
+      })
+    } catch (err) {
+      toast({
+        title: 'Flag failed',
+        description: 'Failed to flag message. Please try again.',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const otherParticipants = Object.values(presenceState)
+    .filter((user: any) => user.userId !== userId)
+
+  return (
+    <Card className={className}>
+      <CardHeader className="flex flex-row items-center justify-between p-4 border-b">
+        <div>
+          <CardTitle className="text-lg">
+            Chat - Quote #{chatRoom.quote_id?.slice(-8)}
+          </CardTitle>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className={`w-2 h-2 rounded-full ${
+              isConnected ? 'bg-green-500' : 'bg-red-500'
+            }`} />
+            {isConnected ? 'Connected' : 'Disconnected'}
+            {otherParticipants.length > 0 && (
+              <span className="flex items-center gap-1">
+                <Users className="w-3 h-3" />
+                {otherParticipants.length} online
+              </span>
+            )}
+          </div>
+        </div>
+
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm">
+              <MoreVertical className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-48">
+            <div className="space-y-2">
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full justify-start"
+                onClick={scrollToBottom}
+              >
+                Scroll to bottom
+              </Button>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="w-full justify-start"
+                onClick={() => markAsRead()}
+              >
+                Mark all as read
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
+      </CardHeader>
+
+      <CardContent className="p-0 flex flex-col h-[500px]">
+        {/* Messages Area */}
+        <ScrollArea className="flex-1 p-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {messages.map((message) => (
+                <ChatMessage
+                  key={message.id}
+                  message={message}
+                  isOwn={message.sender_id === userId}
+                  onFlag={() => handleFlagMessage(message.id)}
+                />
+              ))}
+              {isTyping && <TypingIndicator />}
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </ScrollArea>
+
+        {/* Error Display */}
+        {error && (
+          <div className="p-2 bg-destructive/10 border-t">
+            <p className="text-sm text-destructive">{error}</p>
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={clearError}
+              className="mt-1"
+            >
+              Dismiss
+            </Button>
+          </div>
+        )}
+
+        {/* Message Input */}
+        <div className="p-4 border-t">
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <Textarea
+                value={messageInput}
+                onChange={(e) => setMessageInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder="Type your message..."
+                className="min-h-[60px] resize-none"
+                maxLength={1000}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button
+                onClick={handleSendMessage}
+                disabled={!messageInput.trim() || !isConnected}
+                size="sm"
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="flex justify-between items-center mt-2 text-xs text-muted-foreground">
+            <span>{messageInput.length}/1000 characters</span>
+            <span>Press Enter to send, Shift+Enter for new line</span>
+          </div>
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          onChange={handleFileUpload}
+          accept="image/*,.pdf,.doc,.docx,.txt"
+          className="hidden"
+        />
+      </CardContent>
+    </Card>
+  )
+}
+```
+
+**Individual Message Component:**
+```typescript
+// components/chat/ChatMessage.tsx
+'use client'
+
+import { useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { 
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
+import { 
+  MoreVertical, 
+  Flag, 
+  Copy, 
+  Download,
+  Image as ImageIcon,
+  FileText,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
+import type { Message } from '@/types/database.types'
+
+interface ChatMessageProps {
+  message: Message
+  isOwn: boolean
+  onFlag: () => void
+  className?: string
+}
+
+export function ChatMessage({ 
+  message, 
+  isOwn, 
+  onFlag,
+  className 
+}: ChatMessageProps) {
+  const [imageError, setImageError] = useState(false)
+
+  const formatTime = (timestamp: string) => {
+    return new Date(timestamp).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    })
+  }
+
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err)
+    }
+  }
+
+  const isSystemMessage = message.sender_type === 'admin' && 
+    message.sender_id === '00000000-0000-0000-0000-000000000000'
+  
+  const isImageMessage = message.message_type === 'image'
+  const isFileMessage = message.message_type === 'file'
+
+  // Extract URL from markdown links [text](url)
+  const extractUrl = (content: string) => {
+    const match = content.match(/\[(.+?)\]\((.+?)\)/)
+    return match ? { text: match[1], url: match[2] } : null
+  }
+
+  if (isSystemMessage) {
+    return (
+      <div className={cn("flex justify-center", className)}>
+        <Badge variant="secondary" className="text-xs">
+          {message.content}
+        </Badge>
+      </div>
+    )
+  }
+
+  const fileInfo = isFileMessage ? extractUrl(message.content) : null
+  const imageInfo = isImageMessage ? extractUrl(message.content) : null
+
+  return (
+    <div className={cn(
+      "flex gap-3 group",
+      isOwn ? "justify-end" : "justify-start",
+      className
+    )}>
+      {!isOwn && (
+        <Avatar className="w-8 h-8">
+          <AvatarFallback>
+            {message.sender_type === 'homeowner' ? 'H' : 'I'}
+          </AvatarFallback>
+        </Avatar>
+      )}
+
+      <div className={cn(
+        "max-w-[70%] space-y-1",
+        isOwn ? "items-end" : "items-start"
+      )}>
+        {/* Message header */}
+        <div className={cn(
+          "flex items-center gap-2 text-xs text-muted-foreground",
+          isOwn ? "justify-end" : "justify-start"
+        )}>
+          <span className="capitalize">{message.sender_type}</span>
+          <span>{formatTime(message.created_at)}</span>
+          {message.filtered && (
+            <Badge variant="outline" className="text-xs">
+              Filtered
+            </Badge>
+          )}
+        </div>
+
+        {/* Message content */}
+        <div className={cn(
+          "rounded-lg px-3 py-2 break-words",
+          isOwn 
+            ? "bg-primary text-primary-foreground ml-auto" 
+            : "bg-muted"
+        )}>
+          {isImageMessage && imageInfo ? (
+            <div className="space-y-2">
+              {!imageError ? (
+                <img
+                  src={imageInfo.url}
+                  alt={imageInfo.text}
+                  className="max-w-full h-auto rounded cursor-pointer"
+                  onClick={() => window.open(imageInfo.url, '_blank')}
+                  onError={() => setImageError(true)}
+                />
+              ) : (
+                <div className="flex items-center gap-2 p-4 border border-dashed rounded">
+                  <ImageIcon className="w-4 h-4" />
+                  <span className="text-sm">Failed to load image</span>
+                </div>
+              )}
+              <p className="text-sm opacity-75">{imageInfo.text}</p>
+            </div>
+          ) : isFileMessage && fileInfo ? (
+            <div className="flex items-center gap-2 p-2 bg-background/10 rounded">
+              <FileText className="w-4 h-4" />
+              <div className="flex-1">
+                <p className="text-sm font-medium">{fileInfo.text}</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto p-0 text-xs underline"
+                  onClick={() => window.open(fileInfo.url, '_blank')}
+                >
+                  Download
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+          )}
+        </div>
+
+        {/* Message actions */}
+        <div className={cn(
+          "opacity-0 group-hover:opacity-100 transition-opacity",
+          isOwn ? "justify-end" : "justify-start"
+        )}>
+          <DropDownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                <MoreVertical className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={isOwn ? "end" : "start"}>
+              <DropdownMenuItem 
+                onClick={() => copyToClipboard(message.content)}
+              >
+                <Copy className="w-4 h-4 mr-2" />
+                Copy
+              </DropdownMenuItem>
+              {!isOwn && (
+                <DropdownMenuItem onClick={onFlag}>
+                  <Flag className="w-4 h-4 mr-2" />
+                  Report
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropDownMenu>
+        </div>
+      </div>
+
+      {isOwn && (
+        <Avatar className="w-8 h-8">
+          <AvatarFallback>You</AvatarFallback>
+        </Avatar>
+      )}
+    </div>
+  )
+}
+```
+
+### STEP 5: API Routes for Chat
+**Timeline:** Day 3 Afternoon
+**Files:** Multiple API routes
+
+**Create Chat Room API:**
+```typescript
+// app/api/chat/rooms/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { chatService } from '@/lib/services/chatService'
+import { z } from 'zod'
+
+const createChatRoomSchema = z.object({
+  homeownerId: z.string().uuid(),
+  installerId: z.string().uuid(),
+  quoteId: z.string().uuid(),
+  leadType: z.enum(['call_visit', 'written']),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { homeownerId, installerId, quoteId, leadType } = createChatRoomSchema.parse(body)
+
+    // Verify user has permission to create this chat room
+    if (user.id !== homeownerId && user.id !== installerId) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Create or get chat room
+    const chatRoom = await chatService.createOrGetChatRoom(
+      homeownerId,
+      installerId,
+      quoteId,
+      leadType
+    )
+
+    return NextResponse.json({ chatRoom })
+  } catch (error) {
+    console.error('Create chat room error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create chat room' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Determine user type
+    const { data: homeowner } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    const userType = homeowner ? 'homeowner' : 'installer'
+
+    // Get user's chat rooms
+    const chatRooms = await chatService.getUserChatRooms(user.id, userType)
+
+    return NextResponse.json({ chatRooms })
+  } catch (error) {
+    console.error('Get chat rooms error:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch chat rooms' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+**Send Message API:**
+```typescript
+// app/api/chat/messages/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { chatService } from '@/lib/services/chatService'
+import { z } from 'zod'
+
+const sendMessageSchema = z.object({
+  chatRoomId: z.string().uuid(),
+  content: z.string().min(1).max(1000),
+  messageType: z.enum(['text', 'image', 'file']).optional(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { chatRoomId, content, messageType = 'text' } = sendMessageSchema.parse(body)
+
+    // Verify user has access to this chat room
+    const { data: chatRoom, error: chatError } = await supabase
+      .from('chat_rooms')
+      .select('*')
+      .eq('id', chatRoomId)
+      .or(`homeowner_id.eq.${user.id},installer_id.eq.${user.id}`)
+      .single()
+
+    if (chatError || !chatRoom) {
+      return NextResponse.json({ error: 'Chat room not found' }, { status: 404 })
+    }
+
+    // Determine sender type
+    const senderType = chatRoom.homeowner_id === user.id ? 'homeowner' : 'installer'
+
+    // Send message
+    const message = await chatService.sendMessage(
+      chatRoomId,
+      user.id,
+      senderType,
+      content,
+      messageType
+    )
+
+    return NextResponse.json({ message })
+  } catch (error) {
+    console.error('Send message error:', error)
+    return NextResponse.json(
+      { error: 'Failed to send message' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Real-time Functionality:
+- [ ] Supabase Realtime subscriptions working
+- [ ] Messages appear instantly for both users
+- [ ] Presence indicators show online status
+- [ ] Connection status properly displayed
+
+### Chat Features:
+- [ ] Text messages send and receive correctly
+- [ ] File uploads work (images, PDFs, documents)
+- [ ] Message history loads on chat open
+- [ ] Read receipts update properly
+- [ ] Typing indicators functional
+
+### Security & Moderation:
+- [ ] RLS policies prevent unauthorized access
+- [ ] Content moderation filters profanity
+- [ ] Message flagging system works
+- [ ] File upload validation prevents malicious files
+
+### User Experience:
+- [ ] Chat interface is responsive
+- [ ] Messages scroll smoothly
+- [ ] Notifications work for new messages
+- [ ] Error handling provides clear feedback
+
+---
+
+## 🚨 PRODUCTION CONSIDERATIONS
+
+### Performance Optimization:
+- Message pagination for large chat histories
+- Image optimization and lazy loading
+- Connection pooling for Realtime
+- Message cleanup for inactive chats
+
+### Security Enhancements:
+- Advanced content moderation API integration
+- Rate limiting for message sending
+- File scanning for malware
+- End-to-end encryption for sensitive data
+
+### Monitoring:
+- Real-time connection monitoring
+- Message delivery analytics
+- Moderation queue management
+- Performance metrics tracking
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Test real-time messaging across different browsers
+2. Implement push notifications for mobile users
+3. Add advanced moderation tools for admins
+4. Integrate with existing quote workflow
+5. Proceed to Bidding System Implementation phase

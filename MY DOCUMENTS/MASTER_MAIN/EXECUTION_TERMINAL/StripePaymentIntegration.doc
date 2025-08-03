@@ -1,0 +1,1512 @@
+# STRIPE PAYMENT INTEGRATION - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** HIGH - EXECUTE AFTER DATABASE SCHEMA  
+**Dependencies:** DatabaseSchemaImplementation.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Implement complete Stripe payment system for lead unlocks, wallet topups, and commission processing
+**Estimated Time:** 3-4 days
+**Risk Level:** HIGH (Financial transactions)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Set up Stripe configuration and environment variables
+2. Create secure payment API endpoints
+3. Implement webhook handling for payment confirmations
+4. Build wallet system with transaction tracking
+5. Test all payment flows and error handling
+
+---
+
+## 🎯 INTEGRATION REQUIREMENTS
+
+**Stripe Features to Implement:**
+- ✅ Payment Intents for one-time payments
+- ✅ Customer management for recurring users
+- ✅ Webhook handling for payment confirmations
+- ✅ Wallet system for installer credits
+- ✅ Refund processing for disputes
+- ✅ Multi-party payments for commissions
+
+**Current Payment Flows:**
+- 🔄 Lead unlock: $50 AUD per quote access
+- 🔄 Wallet topup: Variable amounts ($50-$500)
+- 🔄 Deal commission: 3% platform fee on successful deals
+
+---
+
+## 🔧 DEVELOPER EXECUTION STEPS
+
+### STEP 1: Environment Setup & Stripe Configuration
+**DEVELOPER ACTION:** Install Stripe SDK and configure environment variables
+
+**Command:** Install required dependencies:
+```bash
+npm install stripe @stripe/stripe-js
+npm install --save-dev @types/stripe
+```
+
+**File Path:** `.env.local`
+**Command:** Add Stripe configuration to environment file:
+
+```bash
+# Stripe Configuration
+STRIPE_PUBLISHABLE_KEY=pk_test_your_stripe_publishable_key_here
+STRIPE_SECRET_KEY=sk_test_your_stripe_secret_key_here
+STRIPE_WEBHOOK_SECRET=whsec_your_webhook_secret_here
+
+# For production (leave commented for development)
+# STRIPE_PUBLISHABLE_KEY_LIVE=pk_live_your_live_key_here
+# STRIPE_SECRET_KEY_LIVE=sk_live_your_live_key_here  
+# STRIPE_WEBHOOK_SECRET_LIVE=whsec_your_live_webhook_secret_here
+
+# Base URLs
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+```
+
+**File Path:** `lib/stripe.ts`
+**Command:** Create Stripe client configuration:
+
+```typescript
+import Stripe from 'stripe'
+
+// Server-side Stripe instance
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+  apiVersion: '2024-06-20',
+  typescript: true,
+})
+
+// Client-side Stripe configuration
+export const getStripePublishableKey = () => {
+  const key = process.env.NODE_ENV === 'production' 
+    ? process.env.STRIPE_PUBLISHABLE_KEY_LIVE
+    : process.env.STRIPE_PUBLISHABLE_KEY
+
+  if (!key) {
+    throw new Error('Missing Stripe publishable key')
+  }
+
+  return key
+}
+
+// Payment amount helpers
+export const PAYMENT_AMOUNTS = {
+  LEAD_UNLOCK: 5000, // $50.00 in cents
+  WALLET_MINIMUM: 5000, // $50.00 minimum topup
+  WALLET_MAXIMUM: 50000, // $500.00 maximum topup
+  PLATFORM_FEE_PERCENTAGE: 3, // 3% commission
+} as const
+
+// Currency configuration
+export const SUPPORTED_CURRENCIES = ['AUD', 'USD'] as const
+export const DEFAULT_CURRENCY = 'AUD'
+```
+
+**VERIFICATION:** Test Stripe configuration:
+```bash
+npm run build
+```
+
+**STOP & CONFIRM:** Verify no environment variable errors before proceeding.
+
+# Webhook endpoint
+NEXT_PUBLIC_STRIPE_WEBHOOK_URL=https://yourdomain.com/api/webhooks/stripe
+```
+
+**Stripe Configuration File:**
+```typescript
+// lib/stripe.ts
+import Stripe from 'stripe'
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY is not set in environment variables')
+}
+
+export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2024-06-20',
+  typescript: true,
+})
+
+// Stripe configuration constants
+export const STRIPE_CONFIG = {
+  currency: 'aud',
+  leadUnlockPrice: 5000, // $50 AUD in cents
+  minWalletTopup: 5000,  // $50 AUD minimum
+  maxWalletTopup: 50000, // $500 AUD maximum
+  commissionRate: 0.03,  // 3% platform fee
+} as const
+
+// Payment types
+export type PaymentType = 'lead_unlock' | 'wallet_topup' | 'deal_commission'
+
+// Stripe customer creation helper
+export async function createOrGetStripeCustomer(
+  userId: string,
+  email: string,
+  name?: string
+): Promise<string> {
+  try {
+    // Check if customer already exists
+    const existingCustomers = await stripe.customers.list({
+      email: email,
+      limit: 1,
+    })
+
+    if (existingCustomers.data.length > 0) {
+      return existingCustomers.data[0].id
+    }
+
+    // Create new customer
+    const customer = await stripe.customers.create({
+      email,
+      name,
+      metadata: {
+        userId,
+      },
+    })
+
+    return customer.id
+  } catch (error) {
+    console.error('Error creating Stripe customer:', error)
+    throw new Error('Failed to create payment customer')
+  }
+}
+
+// Create payment intent helper
+export async function createPaymentIntent(
+  amount: number,
+  currency: string,
+  customerId: string,
+  paymentType: PaymentType,
+  metadata: Record<string, string> = {}
+): Promise<Stripe.PaymentIntent> {
+  try {
+    return await stripe.paymentIntents.create({
+      amount,
+      currency,
+      customer: customerId,
+      metadata: {
+        paymentType,
+        ...metadata,
+      },
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    })
+  } catch (error) {
+    console.error('Error creating payment intent:', error)
+    throw new Error('Failed to create payment intent')
+  }
+}
+```
+
+### STEP 2: Payment Service Implementation
+**Timeline:** Day 1 Afternoon
+**Files:** `lib/services/paymentService.ts`
+
+```typescript
+// lib/services/paymentService.ts
+import { createClient } from '@/lib/supabase'
+import { stripe, createOrGetStripeCustomer, createPaymentIntent, STRIPE_CONFIG } from '@/lib/stripe'
+import type { PaymentType, Payment, InstallerWallet, WalletTransaction } from '@/types/database.types'
+
+export class PaymentService {
+  private supabase = createClient()
+
+  /**
+   * Create payment for lead unlock
+   */
+  async createLeadUnlockPayment(
+    quoteId: string,
+    installerUserId: string
+  ): Promise<{ clientSecret: string; paymentId: string }> {
+    try {
+      // Get installer details
+      const { data: installer, error: installerError } = await this.supabase
+        .from('installer_users')
+        .select('id, email, first_name, last_name')
+        .eq('id', installerUserId)
+        .single()
+
+      if (installerError || !installer) {
+        throw new Error('Installer not found')
+      }
+
+      // Create or get Stripe customer
+      const customerId = await createOrGetStripeCustomer(
+        installer.id,
+        installer.email,
+        `${installer.first_name} ${installer.last_name}`
+      )
+
+      // Create payment intent
+      const paymentIntent = await createPaymentIntent(
+        STRIPE_CONFIG.leadUnlockPrice,
+        STRIPE_CONFIG.currency,
+        customerId,
+        'lead_unlock',
+        {
+          quoteId,
+          installerUserId,
+        }
+      )
+
+      // Store payment record in database
+      const { data: payment, error: paymentError } = await this.supabase
+        .from('payments')
+        .insert({
+          stripe_payment_intent_id: paymentIntent.id,
+          stripe_customer_id: customerId,
+          amount_cents: STRIPE_CONFIG.leadUnlockPrice,
+          currency: STRIPE_CONFIG.currency,
+          payment_type: 'lead_unlock',
+          payer_id: installerUserId,
+          quote_id: quoteId,
+          status: 'pending',
+          description: `Lead unlock for quote ${quoteId}`,
+        })
+        .select()
+        .single()
+
+      if (paymentError) {
+        throw new Error('Failed to store payment record')
+      }
+
+      return {
+        clientSecret: paymentIntent.client_secret!,
+        paymentId: payment.id,
+      }
+    } catch (error) {
+      console.error('Error creating lead unlock payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Create wallet topup payment
+   */
+  async createWalletTopupPayment(
+    installerUserId: string,
+    amount: number
+  ): Promise<{ clientSecret: string; paymentId: string }> {
+    try {
+      // Validate amount
+      if (amount < STRIPE_CONFIG.minWalletTopup || amount > STRIPE_CONFIG.maxWalletTopup) {
+        throw new Error(`Amount must be between $${STRIPE_CONFIG.minWalletTopup / 100} and $${STRIPE_CONFIG.maxWalletTopup / 100}`)
+      }
+
+      // Get installer details
+      const { data: installer, error: installerError } = await this.supabase
+        .from('installer_users')
+        .select('id, email, first_name, last_name')
+        .eq('id', installerUserId)
+        .single()
+
+      if (installerError || !installer) {
+        throw new Error('Installer not found')
+      }
+
+      // Create or get Stripe customer
+      const customerId = await createOrGetStripeCustomer(
+        installer.id,
+        installer.email,
+        `${installer.first_name} ${installer.last_name}`
+      )
+
+      // Create payment intent
+      const paymentIntent = await createPaymentIntent(
+        amount,
+        STRIPE_CONFIG.currency,
+        customerId,
+        'wallet_topup',
+        {
+          installerUserId,
+        }
+      )
+
+      // Store payment record
+      const { data: payment, error: paymentError } = await this.supabase
+        .from('payments')
+        .insert({
+          stripe_payment_intent_id: paymentIntent.id,
+          stripe_customer_id: customerId,
+          amount_cents: amount,
+          currency: STRIPE_CONFIG.currency,
+          payment_type: 'wallet_topup',
+          payer_id: installerUserId,
+          status: 'pending',
+          description: `Wallet topup for $${amount / 100}`,
+        })
+        .select()
+        .single()
+
+      if (paymentError) {
+        throw new Error('Failed to store payment record')
+      }
+
+      return {
+        clientSecret: paymentIntent.client_secret!,
+        paymentId: payment.id,
+      }
+    } catch (error) {
+      console.error('Error creating wallet topup payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Process wallet payment (deduct from installer wallet)
+   */
+  async processWalletPayment(
+    installerUserId: string,
+    amount: number,
+    quoteId: string,
+    description: string
+  ): Promise<{ success: boolean; transactionId?: string }> {
+    try {
+      // Get installer wallet
+      const { data: wallet, error: walletError } = await this.supabase
+        .from('installer_wallets')
+        .select('*')
+        .eq('installer_id', installerUserId)
+        .single()
+
+      if (walletError || !wallet) {
+        throw new Error('Installer wallet not found')
+      }
+
+      // Check sufficient balance
+      if (wallet.balance_cents < amount) {
+        throw new Error('Insufficient wallet balance')
+      }
+
+      // Create wallet transaction
+      const balanceBefore = wallet.balance_cents
+      const balanceAfter = balanceBefore - amount
+
+      const { data: transaction, error: transactionError } = await this.supabase
+        .from('wallet_transactions')
+        .insert({
+          wallet_id: wallet.id,
+          amount_cents: -amount, // Negative for debit
+          transaction_type: 'lead_purchase',
+          quote_id: quoteId,
+          balance_before_cents: balanceBefore,
+          balance_after_cents: balanceAfter,
+          description,
+        })
+        .select()
+        .single()
+
+      if (transactionError) {
+        throw new Error('Failed to create wallet transaction')
+      }
+
+      // Update wallet balance
+      const { error: updateError } = await this.supabase
+        .from('installer_wallets')
+        .update({
+          balance_cents: balanceAfter,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', wallet.id)
+
+      if (updateError) {
+        throw new Error('Failed to update wallet balance')
+      }
+
+      return {
+        success: true,
+        transactionId: transaction.id,
+      }
+    } catch (error) {
+      console.error('Error processing wallet payment:', error)
+      return { success: false }
+    }
+  }
+
+  /**
+   * Get installer wallet details
+   */
+  async getInstallerWallet(installerUserId: string): Promise<InstallerWallet | null> {
+    try {
+      const { data: wallet, error } = await this.supabase
+        .from('installer_wallets')
+        .select('*')
+        .eq('installer_id', installerUserId)
+        .single()
+
+      if (error) {
+        // Create wallet if it doesn't exist
+        const { data: newWallet, error: createError } = await this.supabase
+          .from('installer_wallets')
+          .insert({
+            installer_id: installerUserId,
+            balance_cents: 0,
+          })
+          .select()
+          .single()
+
+        if (createError) {
+          throw new Error('Failed to create installer wallet')
+        }
+
+        return newWallet
+      }
+
+      return wallet
+    } catch (error) {
+      console.error('Error getting installer wallet:', error)
+      return null
+    }
+  }
+
+  /**
+   * Get wallet transaction history
+   */
+  async getWalletTransactions(
+    installerUserId: string,
+    limit: number = 50
+  ): Promise<WalletTransaction[]> {
+    try {
+      const { data: wallet } = await this.supabase
+        .from('installer_wallets')
+        .select('id')
+        .eq('installer_id', installerUserId)
+        .single()
+
+      if (!wallet) return []
+
+      const { data: transactions, error } = await this.supabase
+        .from('wallet_transactions')
+        .select('*')
+        .eq('wallet_id', wallet.id)
+        .order('created_at', { ascending: false })
+        .limit(limit)
+
+      if (error) {
+        throw new Error('Failed to fetch wallet transactions')
+      }
+
+      return transactions || []
+    } catch (error) {
+      console.error('Error fetching wallet transactions:', error)
+      return []
+    }
+  }
+
+  /**
+   * Process refund
+   */
+  async processRefund(
+    paymentId: string,
+    amount?: number,
+    reason?: string
+  ): Promise<{ success: boolean; refundId?: string }> {
+    try {
+      // Get payment record
+      const { data: payment, error: paymentError } = await this.supabase
+        .from('payments')
+        .select('*')
+        .eq('id', paymentId)
+        .single()
+
+      if (paymentError || !payment) {
+        throw new Error('Payment not found')
+      }
+
+      if (!payment.stripe_payment_intent_id) {
+        throw new Error('No Stripe payment intent found')
+      }
+
+      // Create refund in Stripe
+      const refund = await stripe.refunds.create({
+        payment_intent: payment.stripe_payment_intent_id,
+        amount: amount || payment.amount_cents,
+        reason: 'requested_by_customer',
+        metadata: {
+          originalPaymentId: paymentId,
+          refundReason: reason || 'Customer request',
+        },
+      })
+
+      // Update payment status
+      await this.supabase
+        .from('payments')
+        .update({
+          status: 'refunded',
+          refunded_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', paymentId)
+
+      return {
+        success: true,
+        refundId: refund.id,
+      }
+    } catch (error) {
+      console.error('Error processing refund:', error)
+      return { success: false }
+    }
+  }
+}
+
+// Export singleton instance
+export const paymentService = new PaymentService()
+```
+
+### STEP 3: API Routes Implementation
+**Timeline:** Day 2 Full Day
+**Files:** Multiple API route files
+
+**Lead Unlock Payment API:**
+```typescript
+// app/api/payments/lead-unlock/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { paymentService } from '@/lib/services/paymentService'
+import { z } from 'zod'
+
+const leadUnlockSchema = z.object({
+  quoteId: z.string().uuid(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { quoteId } = leadUnlockSchema.parse(body)
+
+    // Verify user is an installer
+    const { data: installerUser, error: installerError } = await supabase
+      .from('installer_users')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (installerError || !installerUser) {
+      return NextResponse.json({ error: 'Only installers can unlock leads' }, { status: 403 })
+    }
+
+    // Check if quote exists and is not already unlocked by this installer
+    const { data: existingPayment } = await supabase
+      .from('payments')
+      .select('id')
+      .eq('quote_id', quoteId)
+      .eq('payer_id', user.id)
+      .eq('payment_type', 'lead_unlock')
+      .eq('status', 'succeeded')
+      .single()
+
+    if (existingPayment) {
+      return NextResponse.json({ error: 'Lead already unlocked' }, { status: 400 })
+    }
+
+    // Create payment
+    const { clientSecret, paymentId } = await paymentService.createLeadUnlockPayment(
+      quoteId,
+      user.id
+    )
+
+    return NextResponse.json({
+      clientSecret,
+      paymentId,
+      amount: 5000, // $50 AUD
+    })
+  } catch (error) {
+    console.error('Lead unlock payment error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create payment' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+**Wallet Topup API:**
+```typescript
+// app/api/payments/wallet-topup/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { paymentService } from '@/lib/services/paymentService'
+import { z } from 'zod'
+
+const walletTopupSchema = z.object({
+  amount: z.number().min(5000).max(50000), // $50-$500 AUD in cents
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { amount } = walletTopupSchema.parse(body)
+
+    // Verify user is an installer
+    const { data: installerUser, error: installerError } = await supabase
+      .from('installer_users')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (installerError || !installerUser) {
+      return NextResponse.json({ error: 'Only installers can topup wallet' }, { status: 403 })
+    }
+
+    // Create payment
+    const { clientSecret, paymentId } = await paymentService.createWalletTopupPayment(
+      user.id,
+      amount
+    )
+
+    return NextResponse.json({
+      clientSecret,
+      paymentId,
+      amount,
+    })
+  } catch (error) {
+    console.error('Wallet topup payment error:', error)
+    return NextResponse.json(
+      { error: 'Failed to create payment' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+**Wallet Payment API:**
+```typescript
+// app/api/payments/wallet-pay/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { paymentService } from '@/lib/services/paymentService'
+import { z } from 'zod'
+
+const walletPaySchema = z.object({
+  quoteId: z.string().uuid(),
+  amount: z.number().positive(),
+  description: z.string().optional(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { quoteId, amount, description } = walletPaySchema.parse(body)
+
+    // Process wallet payment
+    const result = await paymentService.processWalletPayment(
+      user.id,
+      amount,
+      quoteId,
+      description || `Lead unlock payment for quote ${quoteId}`
+    )
+
+    if (!result.success) {
+      return NextResponse.json({ error: 'Payment failed' }, { status: 400 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      transactionId: result.transactionId,
+    })
+  } catch (error) {
+    console.error('Wallet payment error:', error)
+    return NextResponse.json(
+      { error: 'Failed to process payment' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+**Wallet Status API:**
+```typescript
+// app/api/payments/wallet/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { paymentService } from '@/lib/services/paymentService'
+
+export async function GET(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Get wallet details
+    const wallet = await paymentService.getInstallerWallet(user.id)
+    const transactions = await paymentService.getWalletTransactions(user.id, 20)
+
+    return NextResponse.json({
+      wallet,
+      recentTransactions: transactions,
+    })
+  } catch (error) {
+    console.error('Wallet status error:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch wallet status' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+### STEP 4: Stripe Webhook Handler
+**Timeline:** Day 3 Morning
+**Files:** `app/api/webhooks/stripe/route.ts`
+
+```typescript
+// app/api/webhooks/stripe/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { headers } from 'next/headers'
+import { stripe } from '@/lib/stripe'
+import { createServiceClient } from '@/lib/supabase'
+import { paymentService } from '@/lib/services/paymentService'
+import Stripe from 'stripe'
+
+// Disable body parsing for webhooks
+export const runtime = 'nodejs'
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.text()
+    const signature = headers().get('stripe-signature')
+
+    if (!signature) {
+      return NextResponse.json({ error: 'No signature' }, { status: 400 })
+    }
+
+    // Verify webhook signature
+    let event: Stripe.Event
+    try {
+      event = stripe.webhooks.constructEvent(
+        body,
+        signature,
+        process.env.STRIPE_WEBHOOK_SECRET!
+      )
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      console.error('Webhook signature verification failed:', errorMessage)
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
+    }
+
+    const supabase = createServiceClient() // Use service role key for webhooks
+
+    // Handle the event
+    switch (event.type) {
+      case 'payment_intent.succeeded':
+        await handlePaymentSucceeded(event.data.object as Stripe.PaymentIntent, supabase)
+        break
+
+      case 'payment_intent.payment_failed':
+        await handlePaymentFailed(event.data.object as Stripe.PaymentIntent, supabase)
+        break
+
+      case 'payment_intent.canceled':
+        await handlePaymentCanceled(event.data.object as Stripe.PaymentIntent, supabase)
+        break
+
+      default:
+        console.log(`Unhandled event type: ${event.type}`)
+    }
+
+    return NextResponse.json({ received: true })
+  } catch (error) {
+    console.error('Webhook error:', error)
+    return NextResponse.json(
+      { error: 'Webhook handler failed' },
+      { status: 500 }
+    )
+  }
+}
+
+async function handlePaymentSucceeded(
+  paymentIntent: Stripe.PaymentIntent,
+  supabase: any
+) {
+  try {
+    // Update payment status
+    const { data: payment, error: updateError } = await supabase
+      .from('payments')
+      .update({
+        status: 'succeeded',
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+      .select()
+      .single()
+
+    if (updateError || !payment) {
+      console.error('Failed to update payment status:', updateError)
+      return
+    }
+
+    const paymentType = payment.payment_type
+
+    // Handle different payment types
+    if (paymentType === 'wallet_topup') {
+      // Credit installer wallet
+      await creditInstallerWallet(payment, supabase)
+    } else if (paymentType === 'lead_unlock') {
+      // Grant access to quote
+      await grantQuoteAccess(payment, supabase)
+    }
+
+    // Log successful payment
+    await supabase.rpc('log_event', {
+      p_category: 'payment',
+      p_event_type: 'payment_succeeded',
+      p_message: `Payment ${payment.id} succeeded for ${paymentType}`,
+      p_severity: 'info',
+      p_user_id: payment.payer_id,
+      p_details: {
+        paymentId: payment.id,
+        amount: payment.amount_cents,
+        paymentType,
+        stripePaymentIntentId: paymentIntent.id,
+      },
+    })
+  } catch (error) {
+    console.error('Error handling payment success:', error)
+  }
+}
+
+async function handlePaymentFailed(
+  paymentIntent: Stripe.PaymentIntent,
+  supabase: any
+) {
+  try {
+    // Update payment status
+    const { data: payment, error: updateError } = await supabase
+      .from('payments')
+      .update({
+        status: 'failed',
+        failed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+      .select()
+      .single()
+
+    if (updateError) {
+      console.error('Failed to update payment status:', updateError)
+      return
+    }
+
+    // Log failed payment
+    await supabase.rpc('log_event', {
+      p_category: 'payment',
+      p_event_type: 'payment_failed',
+      p_message: `Payment ${payment.id} failed`,
+      p_severity: 'warning',
+      p_user_id: payment.payer_id,
+      p_details: {
+        paymentId: payment.id,
+        stripePaymentIntentId: paymentIntent.id,
+        lastPaymentError: paymentIntent.last_payment_error,
+      },
+    })
+  } catch (error) {
+    console.error('Error handling payment failure:', error)
+  }
+}
+
+async function handlePaymentCanceled(
+  paymentIntent: Stripe.PaymentIntent,
+  supabase: any
+) {
+  try {
+    // Update payment status
+    await supabase
+      .from('payments')
+      .update({
+        status: 'cancelled',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('stripe_payment_intent_id', paymentIntent.id)
+  } catch (error) {
+    console.error('Error handling payment cancellation:', error)
+  }
+}
+
+async function creditInstallerWallet(payment: any, supabase: any) {
+  try {
+    // Get installer wallet
+    const { data: wallet, error: walletError } = await supabase
+      .from('installer_wallets')
+      .select('*')
+      .eq('installer_id', payment.payer_id)
+      .single()
+
+    if (walletError || !wallet) {
+      console.error('Installer wallet not found:', payment.payer_id)
+      return
+    }
+
+    // Create wallet transaction
+    const balanceBefore = wallet.balance_cents
+    const balanceAfter = balanceBefore + payment.amount_cents
+
+    await supabase
+      .from('wallet_transactions')
+      .insert({
+        wallet_id: wallet.id,
+        amount_cents: payment.amount_cents,
+        transaction_type: 'topup',
+        payment_id: payment.id,
+        balance_before_cents: balanceBefore,
+        balance_after_cents: balanceAfter,
+        description: `Wallet topup of $${payment.amount_cents / 100}`,
+      })
+
+    // Update wallet balance
+    await supabase
+      .from('installer_wallets')
+      .update({
+        balance_cents: balanceAfter,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', wallet.id)
+  } catch (error) {
+    console.error('Error crediting installer wallet:', error)
+  }
+}
+
+async function grantQuoteAccess(payment: any, supabase: any) {
+  try {
+    // Create or update quote access record
+    // This could be a separate table or a field update
+    // For now, we'll assume the payment record itself grants access
+    
+    // Log quote access granted
+    await supabase.rpc('log_event', {
+      p_category: 'quote',
+      p_event_type: 'access_granted',
+      p_message: `Quote access granted to installer ${payment.payer_id}`,
+      p_severity: 'info',
+      p_user_id: payment.payer_id,
+      p_details: {
+        quoteId: payment.quote_id,
+        paymentId: payment.id,
+      },
+    })
+  } catch (error) {
+    console.error('Error granting quote access:', error)
+  }
+}
+```
+
+### STEP 5: Frontend Payment Components
+**Timeline:** Day 3 Afternoon to Day 4
+**Files:** Multiple React components
+
+**Payment Modal Component:**
+```typescript
+// components/payments/PaymentModal.tsx
+'use client'
+
+import { useState } from 'react'
+import { loadStripe } from '@stripe/stripe-js'
+import {
+  Elements,
+  PaymentElement,
+  useStripe,
+  useElements,
+} from '@stripe/react-stripe-js'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Loader2 } from 'lucide-react'
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+
+interface PaymentModalProps {
+  isOpen: boolean
+  onClose: () => void
+  clientSecret: string
+  amount: number
+  title: string
+  description: string
+  onSuccess?: () => void
+}
+
+function PaymentForm({ 
+  amount, 
+  onSuccess, 
+  onClose 
+}: { 
+  amount: number
+  onSuccess?: () => void
+  onClose: () => void
+}) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+
+    if (!stripe || !elements) {
+      return
+    }
+
+    setIsLoading(true)
+    setError(null)
+
+    const { error: submitError } = await elements.submit()
+
+    if (submitError) {
+      setError(submitError.message || 'An error occurred')
+      setIsLoading(false)
+      return
+    }
+
+    const { error: confirmError } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/payment-success`,
+      },
+      redirect: 'if_required',
+    })
+
+    if (confirmError) {
+      setError(confirmError.message || 'Payment failed')
+      setIsLoading(false)
+    } else {
+      // Payment succeeded
+      onSuccess?.()
+      onClose()
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <PaymentElement />
+      
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex justify-between items-center pt-4">
+        <p className="text-lg font-semibold">
+          Total: ${(amount / 100).toFixed(2)} AUD
+        </p>
+        <div className="space-x-2">
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={!stripe || isLoading}>
+            {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Pay Now
+          </Button>
+        </div>
+      </div>
+    </form>
+  )
+}
+
+export function PaymentModal({
+  isOpen,
+  onClose,
+  clientSecret,
+  amount,
+  title,
+  description,
+  onSuccess,
+}: PaymentModalProps) {
+  const options = {
+    clientSecret,
+    appearance: {
+      theme: 'stripe' as const,
+    },
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+
+        <Elements stripe={stripePromise} options={options}>
+          <PaymentForm 
+            amount={amount} 
+            onSuccess={onSuccess}
+            onClose={onClose}
+          />
+        </Elements>
+      </DialogContent>
+    </Dialog>
+  )
+}
+```
+
+**Wallet Component:**
+```typescript
+// components/installer/WalletCard.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { PaymentModal } from '@/components/payments/PaymentModal'
+import { Wallet, Plus, History } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import type { InstallerWallet, WalletTransaction } from '@/types/database.types'
+
+interface WalletCardProps {
+  className?: string
+}
+
+export function WalletCard({ className }: WalletCardProps) {
+  const [wallet, setWallet] = useState<InstallerWallet | null>(null)
+  const [transactions, setTransactions] = useState<WalletTransaction[]>([])
+  const [topupAmount, setTopupAmount] = useState('')
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false)
+  const [clientSecret, setClientSecret] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const { toast } = useToast()
+
+  // Fetch wallet data
+  useEffect(() => {
+    fetchWalletData()
+  }, [])
+
+  const fetchWalletData = async () => {
+    try {
+      const response = await fetch('/api/payments/wallet')
+      if (response.ok) {
+        const data = await response.json()
+        setWallet(data.wallet)
+        setTransactions(data.recentTransactions)
+      }
+    } catch (error) {
+      console.error('Error fetching wallet data:', error)
+    }
+  }
+
+  const handleTopup = async () => {
+    if (!topupAmount || isNaN(Number(topupAmount))) {
+      toast({
+        title: 'Invalid amount',
+        description: 'Please enter a valid amount',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    const amountCents = Math.round(Number(topupAmount) * 100)
+
+    if (amountCents < 5000 || amountCents > 50000) {
+      toast({
+        title: 'Invalid amount',
+        description: 'Amount must be between $50 and $500',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      const response = await fetch('/api/payments/wallet-topup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ amount: amountCents }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setClientSecret(data.clientSecret)
+        setIsPaymentModalOpen(true)
+      } else {
+        throw new Error('Failed to create payment')
+      }
+    } catch (error) {
+      toast({
+        title: 'Payment Error',
+        description: 'Failed to process payment request',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handlePaymentSuccess = () => {
+    toast({
+      title: 'Payment Successful',
+      description: 'Your wallet has been topped up successfully',
+    })
+    setTopupAmount('')
+    fetchWalletData() // Refresh wallet data
+  }
+
+  return (
+    <>
+      <Card className={className}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Wallet className="h-5 w-5" />
+            Installer Wallet
+          </CardTitle>
+          <CardDescription>
+            Manage your wallet balance and payment history
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* Current Balance */}
+          <div className="text-center p-4 bg-muted rounded-lg">
+            <p className="text-sm text-muted-foreground">Current Balance</p>
+            <p className="text-3xl font-bold">
+              ${wallet ? (wallet.balance_cents / 100).toFixed(2) : '0.00'} AUD
+            </p>
+          </div>
+
+          {/* Topup Section */}
+          <div className="space-y-2">
+            <Label htmlFor="topup-amount">Top Up Amount</Label>
+            <div className="flex gap-2">
+              <Input
+                id="topup-amount"
+                type="number"
+                placeholder="50"
+                min="50"
+                max="500"
+                step="10"
+                value={topupAmount}
+                onChange={(e) => setTopupAmount(e.target.value)}
+              />
+              <Button 
+                onClick={handleTopup} 
+                disabled={isLoading || !topupAmount}
+                className="shrink-0"
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Top Up
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Minimum $50, Maximum $500 AUD
+            </p>
+          </div>
+
+          {/* Recent Transactions */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4" />
+              <Label>Recent Transactions</Label>
+            </div>
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {transactions.length > 0 ? (
+                transactions.map((transaction) => (
+                  <div
+                    key={transaction.id}
+                    className="flex justify-between items-center p-2 bg-muted/50 rounded text-sm"
+                  >
+                    <div>
+                      <p className="font-medium">{transaction.description}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(transaction.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <p className={`font-semibold ${
+                      transaction.amount_cents > 0 ? 'text-green-600' : 'text-red-600'
+                    }`}>
+                      ${Math.abs(transaction.amount_cents / 100).toFixed(2)}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No transactions yet
+                </p>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        clientSecret={clientSecret}
+        amount={Number(topupAmount) * 100}
+        title="Top Up Wallet"
+        description={`Add $${topupAmount} to your installer wallet`}
+        onSuccess={handlePaymentSuccess}
+      />
+    </>
+  )
+}
+```
+
+### STEP 6: Lead Unlock Integration
+**Timeline:** Day 4 Afternoon
+**Files:** Update existing quote components
+
+**Update Quote Card Component:**
+```typescript
+// components/installer/QuoteCard.tsx additions
+import { PaymentModal } from '@/components/payments/PaymentModal'
+
+// Add to existing QuoteCard component
+const [isUnlockModalOpen, setIsUnlockModalOpen] = useState(false)
+const [paymentClientSecret, setPaymentClientSecret] = useState('')
+const [isProcessingPayment, setIsProcessingPayment] = useState(false)
+
+const handleUnlockQuote = async () => {
+  setIsProcessingPayment(true)
+  
+  try {
+    const response = await fetch('/api/payments/lead-unlock', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ quoteId: quote.id }),
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      setPaymentClientSecret(data.clientSecret)
+      setIsUnlockModalOpen(true)
+    } else {
+      throw new Error('Failed to create payment')
+    }
+  } catch (error) {
+    toast({
+      title: 'Payment Error',
+      description: 'Failed to process unlock request',
+      variant: 'destructive',
+    })
+  } finally {
+    setIsProcessingPayment(false)
+  }
+}
+
+// Add unlock button to the component JSX
+<Button onClick={handleUnlockQuote} disabled={isProcessingPayment}>
+  {isProcessingPayment ? 'Processing...' : 'Unlock Lead ($50)'}
+</Button>
+
+// Add payment modal
+<PaymentModal
+  isOpen={isUnlockModalOpen}
+  onClose={() => setIsUnlockModalOpen(false)}
+  clientSecret={paymentClientSecret}
+  amount={5000}
+  title="Unlock Lead"
+  description="Pay $50 to unlock this lead and contact the homeowner"
+  onSuccess={() => {
+    toast({
+      title: 'Lead Unlocked',
+      description: 'You can now contact this homeowner',
+    })
+    // Refresh quote data
+  }}
+/>
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Stripe Configuration:
+- [ ] Environment variables set correctly
+- [ ] Webhook endpoint configured in Stripe dashboard
+- [ ] Test mode vs live mode properly configured
+- [ ] API keys have correct permissions
+
+### Payment Flows:
+- [ ] Lead unlock payment works end-to-end
+- [ ] Wallet topup successful
+- [ ] Wallet deduction for lead unlocks
+- [ ] Refund processing functional
+- [ ] Webhook events processed correctly
+
+### Security:
+- [ ] API routes properly authenticated
+- [ ] Input validation on all endpoints
+- [ ] RLS policies prevent unauthorized access
+- [ ] Webhook signature verification working
+
+### User Experience:
+- [ ] Payment modals render correctly
+- [ ] Error messages are user-friendly
+- [ ] Loading states implemented
+- [ ] Success notifications working
+
+---
+
+## 🚨 PRODUCTION DEPLOYMENT NOTES
+
+### Stripe Dashboard Configuration:
+1. Add webhook endpoint: `https://yourdomain.com/api/webhooks/stripe`
+2. Enable events: `payment_intent.succeeded`, `payment_intent.payment_failed`, `payment_intent.canceled`
+3. Copy webhook secret to environment variables
+4. Update to live API keys for production
+
+### Testing Checklist:
+```bash
+# Test card numbers (Stripe test mode)
+# Success: 4242424242424242
+# Decline: 4000000000000002
+# Insufficient funds: 4000000000009995
+```
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Test all payment flows in Stripe test mode
+2. Configure production Stripe account
+3. Implement admin payment management interface
+4. Add payment analytics and reporting
+5. Proceed to Real-Time Chat System implementation

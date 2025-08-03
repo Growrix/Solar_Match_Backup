@@ -1,0 +1,61 @@
+# TASK: EXECUTE THE FINAL SOLARMATCH BUILD – FULL ORCHESTRATION
+
+You now have 10 validated execution plan files in:
+
+MY DOCUMENTS\MASTER_MAIN\EXECUTIONTERMINAL\
+
+Order of execution:
+
+1. CriticalSecurityFixes.doc
+2. DatabaseSchemaImplementation.doc
+3. StripePaymentIntegration.doc
+4. RealTimeChatSystem.doc
+5. BiddingSystemImplementation.doc
+6. QuoteVersioningSystem.doc
+7. AIAssistantEnhancement.doc
+8. AdminPanelDevelopment.doc
+9. ProductionDeploymentSetup.doc
+10. IntegrationTesting.doc
+
+---
+
+## EXECUTION RULES
+
+1. **Load each document one by one**.
+2. For each document:
+   - Read the first step.
+   - Generate the required files, folders, migrations, APIs, or code as per instructions.
+   - After completing a step:
+     ```
+     STOP.
+     Confirm completion and testing before continuing.
+     ```
+   - Wait for my explicit confirmation before moving to the next step.
+3. **Do not skip steps.** Even if you think it is done, stop and confirm.
+4. If a dependency is missing, pause and guide me to fix it first.
+5. Continue through all steps in the current document until it is 100% completed and tested.
+6. When a document is finished:
+   - Announce: "Document [filename] completed."
+   - Then automatically load the next document and repeat.
+
+---
+
+## FINAL GOAL
+
+At the end of all 10 documents:
+
+- The SolarMatch platform must be:
+  - Fully functional
+  - Secure
+  - Integrated with Supabase and Stripe
+  - Real-time chat enabled
+  - AI assistant enabled
+  - Admin panel completed
+  - Tested
+  - Deployed live in production
+
+Stop at the very end and wait for my confirmation of success.
+
+---
+
+BEGIN EXECUTION NOW.

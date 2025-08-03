@@ -1,0 +1,1429 @@
+# ADMIN PANEL DEVELOPMENT - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** HIGH - EXECUTE AFTER AI ASSISTANT  
+**Dependencies:** AIAssistantEnhancement.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Build comprehensive admin panel for platform management and analytics
+**Estimated Time:** 3-4 days
+**Risk Level:** MEDIUM (Complex admin workflows and data management)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Create admin authentication and authorization
+2. Build admin dashboard with analytics
+3. Implement user management interface
+4. Create system monitoring and audit tools
+5. Test admin functionality and security
+
+---
+
+## 🎯 ADMIN PANEL REQUIREMENTS
+
+**Current State Analysis:**
+- Basic admin access control exists in `components/AccessControl.tsx`
+- No dedicated admin dashboard or management interface
+- Limited user management capabilities
+- No system analytics or monitoring
+
+**Admin Features Needed:**
+- ✅ User management (homeowners, installers, admins)
+- ✅ Quote and bidding oversight
+- ✅ Payment and transaction monitoring
+- ✅ System analytics and reporting
+- ✅ Content management
+- ✅ Support ticket system
+- ✅ Audit logs and security monitoring
+- ✅ Platform configuration settings
+
+---
+
+## 🔧 EXECUTION STEPS
+
+### STEP 1: Admin Dashboard Core
+**Timeline:** Day 1 Full Day
+**Files:** `app/(app)/admin/layout.tsx`, `app/(app)/admin/page.tsx`
+
+```typescript
+// app/(app)/admin/layout.tsx
+import { redirect } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
+import { AdminSidebar } from '@/components/admin/AdminSidebar'
+import { AdminHeader } from '@/components/admin/AdminHeader'
+
+export default async function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const supabase = createClient()
+  
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) {
+    redirect('/login')
+  }
+
+  // Check admin role
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, is_admin')
+    .eq('id', user.id)
+    .single()
+
+  if (!profile?.is_admin && profile?.role !== 'admin') {
+    redirect('/')
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <AdminHeader user={user} profile={profile} />
+      <div className="flex">
+        <AdminSidebar />
+        <main className="flex-1 p-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  )
+}
+```
+
+```typescript
+// app/(app)/admin/page.tsx
+import { createClient } from '@/lib/supabase'
+import { AdminDashboard } from '@/components/admin/AdminDashboard'
+import { AdminStats } from '@/components/admin/AdminStats'
+import { RecentActivity } from '@/components/admin/RecentActivity'
+import { SystemHealth } from '@/components/admin/SystemHealth'
+
+export default async function AdminPage() {
+  const supabase = createClient()
+
+  // Fetch dashboard data
+  const [
+    { data: stats },
+    { data: recentActivity },
+    { data: systemHealth }
+  ] = await Promise.all([
+    supabase.rpc('get_admin_stats'),
+    supabase.rpc('get_recent_activity', { limit_count: 20 }),
+    supabase.rpc('get_system_health')
+  ])
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+        <p className="text-gray-600">Monitor and manage the SolarMatch platform</p>
+      </div>
+
+      <AdminStats stats={stats} />
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <RecentActivity activities={recentActivity} />
+        <SystemHealth health={systemHealth} />
+      </div>
+
+      <AdminDashboard />
+    </div>
+  )
+}
+```
+
+### STEP 2: Admin Components Library
+**Timeline:** Day 1-2
+**Files:** Multiple admin components
+
+```typescript
+// components/admin/AdminSidebar.tsx
+'use client'
+
+import { useState } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
+import { cn } from '@/lib/utils'
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  CreditCard,
+  BarChart3,
+  Settings,
+  MessageSquare,
+  Shield,
+  Bell,
+  HelpCircle,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
+
+const navigation = [
+  { name: 'Dashboard', href: '/admin', icon: LayoutDashboard },
+  { name: 'Users', href: '/admin/users', icon: Users },
+  { name: 'Quotes', href: '/admin/quotes', icon: FileText },
+  { name: 'Payments', href: '/admin/payments', icon: CreditCard },
+  { name: 'Analytics', href: '/admin/analytics', icon: BarChart3 },
+  { name: 'Support', href: '/admin/support', icon: MessageSquare },
+  { name: 'Security', href: '/admin/security', icon: Shield },
+  { name: 'Settings', href: '/admin/settings', icon: Settings },
+]
+
+export function AdminSidebar() {
+  const [collapsed, setCollapsed] = useState(false)
+  const pathname = usePathname()
+
+  return (
+    <div className={cn(
+      'bg-white border-r border-gray-200 transition-all duration-300',
+      collapsed ? 'w-16' : 'w-64'
+    )}>
+      <div className="p-4">
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-gray-100"
+        >
+          {!collapsed && <span className="font-semibold">Admin Panel</span>}
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+
+      <nav className="px-2 space-y-1">
+        {navigation.map((item) => {
+          const isActive = pathname === item.href
+          return (
+            <Link
+              key={item.name}
+              href={item.href}
+              className={cn(
+                'flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                isActive
+                  ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
+                  : 'text-gray-700 hover:bg-gray-100'
+              )}
+            >
+              <item.icon className={cn('h-5 w-5', collapsed ? 'mx-auto' : 'mr-3')} />
+              {!collapsed && <span>{item.name}</span>}
+            </Link>
+          )
+        })}
+      </nav>
+    </div>
+  )
+}
+```
+
+```typescript
+// components/admin/AdminStats.tsx
+'use client'
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { TrendingUp, TrendingDown, Users, FileText, DollarSign, Zap } from 'lucide-react'
+import { formatCurrency } from '@/lib/utils'
+
+interface AdminStatsProps {
+  stats: {
+    total_users: number
+    new_users_this_month: number
+    user_growth_rate: number
+    total_quotes: number
+    active_quotes: number
+    quote_growth_rate: number
+    total_revenue_cents: number
+    monthly_revenue_cents: number
+    revenue_growth_rate: number
+    system_capacity_kw: number
+    capacity_growth_rate: number
+  } | null
+}
+
+export function AdminStats({ stats }: AdminStatsProps) {
+  if (!stats) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} className="animate-pulse">
+            <CardHeader className="pb-2">
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            </CardHeader>
+            <CardContent>
+              <div className="h-8 bg-gray-200 rounded w-3/4 mb-2"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    )
+  }
+
+  const statCards = [
+    {
+      title: 'Total Users',
+      value: stats.total_users.toLocaleString(),
+      description: `+${stats.new_users_this_month} this month`,
+      growth: stats.user_growth_rate,
+      icon: Users,
+      color: 'blue',
+    },
+    {
+      title: 'Active Quotes',
+      value: stats.active_quotes.toLocaleString(),
+      description: `${stats.total_quotes} total quotes`,
+      growth: stats.quote_growth_rate,
+      icon: FileText,
+      color: 'green',
+    },
+    {
+      title: 'Monthly Revenue',
+      value: formatCurrency(stats.monthly_revenue_cents),
+      description: `${formatCurrency(stats.total_revenue_cents)} total`,
+      growth: stats.revenue_growth_rate,
+      icon: DollarSign,
+      color: 'yellow',
+    },
+    {
+      title: 'System Capacity',
+      value: `${(stats.system_capacity_kw / 1000).toFixed(1)}MW`,
+      description: 'Total solar capacity',
+      growth: stats.capacity_growth_rate,
+      icon: Zap,
+      color: 'purple',
+    },
+  ]
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {statCards.map((stat) => (
+        <Card key={stat.title}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
+            <stat.icon className={`h-4 w-4 text-${stat.color}-600`} />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stat.value}</div>
+            <div className="flex items-center text-xs text-muted-foreground">
+              <span className="mr-1">{stat.description}</span>
+              {stat.growth !== 0 && (
+                <Badge 
+                  variant={stat.growth > 0 ? 'default' : 'destructive'}
+                  className="ml-auto"
+                >
+                  {stat.growth > 0 ? (
+                    <TrendingUp className="h-3 w-3 mr-1" />
+                  ) : (
+                    <TrendingDown className="h-3 w-3 mr-1" />
+                  )}
+                  {Math.abs(stat.growth).toFixed(1)}%
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  )
+}
+```
+
+### STEP 3: User Management System
+**Timeline:** Day 2-3
+**Files:** `app/(app)/admin/users/page.tsx`, `components/admin/UserManagement.tsx`
+
+```typescript
+// app/(app)/admin/users/page.tsx
+import { createClient } from '@/lib/supabase'
+import { UserManagement } from '@/components/admin/UserManagement'
+import { UserStats } from '@/components/admin/UserStats'
+
+interface SearchParams {
+  page?: string
+  search?: string
+  role?: string
+  status?: string
+}
+
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: SearchParams
+}) {
+  const supabase = createClient()
+  
+  const page = parseInt(searchParams.page || '1')
+  const limit = 50
+  const offset = (page - 1) * limit
+
+  // Build query
+  let query = supabase
+    .from('profiles')
+    .select(`
+      *,
+      solar_quotes(count),
+      installer_profiles(company_name, verification_status),
+      payment_transactions(count)
+    `)
+    .range(offset, offset + limit - 1)
+    .order('created_at', { ascending: false })
+
+  // Apply filters
+  if (searchParams.search) {
+    query = query.or(`full_name.ilike.%${searchParams.search}%,email.ilike.%${searchParams.search}%`)
+  }
+
+  if (searchParams.role) {
+    query = query.eq('role', searchParams.role)
+  }
+
+  if (searchParams.status) {
+    query = query.eq('status', searchParams.status)
+  }
+
+  const { data: users, error } = await query
+
+  if (error) {
+    console.error('Error fetching users:', error)
+    return <div>Error loading users</div>
+  }
+
+  // Get total count for pagination
+  const { count: totalUsers } = await supabase
+    .from('profiles')
+    .select('*', { count: 'exact', head: true })
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
+        <p className="text-gray-600">Manage users, roles, and permissions</p>
+      </div>
+
+      <UserStats />
+
+      <UserManagement 
+        users={users || []}
+        totalUsers={totalUsers || 0}
+        currentPage={page}
+        searchParams={searchParams}
+      />
+    </div>
+  )
+}
+```
+
+```typescript
+// components/admin/UserManagement.tsx
+'use client'
+
+import { useState, useTransition } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { 
+  Search, 
+  Filter, 
+  MoreHorizontal, 
+  Mail, 
+  Phone, 
+  Calendar,
+  DollarSign,
+  FileText,
+  Shield,
+  Ban,
+  CheckCircle,
+  AlertTriangle,
+} from 'lucide-react'
+import { formatDate, formatCurrency } from '@/lib/utils'
+import { useToast } from '@/components/ui/use-toast'
+import type { Profile } from '@/types/database.types'
+
+interface UserManagementProps {
+  users: any[]
+  totalUsers: number
+  currentPage: number
+  searchParams: Record<string, string>
+}
+
+export function UserManagement({ 
+  users, 
+  totalUsers, 
+  currentPage, 
+  searchParams 
+}: UserManagementProps) {
+  const [isPending, startTransition] = useTransition()
+  const [selectedUser, setSelectedUser] = useState<any>(null)
+  const [searchQuery, setSearchQuery] = useState(searchParams.search || '')
+  const [roleFilter, setRoleFilter] = useState(searchParams.role || 'all')
+  const [statusFilter, setStatusFilter] = useState(searchParams.status || 'all')
+  
+  const router = useRouter()
+  const { toast } = useToast()
+
+  const handleSearch = () => {
+    const params = new URLSearchParams()
+    if (searchQuery) params.set('search', searchQuery)
+    if (roleFilter !== 'all') params.set('role', roleFilter)
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    
+    startTransition(() => {
+      router.push(`/admin/users?${params.toString()}`)
+    })
+  }
+
+  const handleUserAction = async (userId: string, action: string) => {
+    try {
+      const response = await fetch('/api/admin/users/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, action }),
+      })
+
+      if (!response.ok) throw new Error('Action failed')
+
+      toast({
+        title: 'Success',
+        description: `User ${action} successfully`,
+      })
+
+      router.refresh()
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: `Failed to ${action} user`,
+        variant: 'destructive',
+      })
+    }
+  }
+
+  const getRoleColor = (role: string) => {
+    switch (role) {
+      case 'admin': return 'destructive'
+      case 'installer': return 'default'
+      case 'homeowner': return 'secondary'
+      default: return 'outline'
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'default'
+      case 'suspended': return 'destructive'
+      case 'pending': return 'secondary'
+      default: return 'outline'
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Users ({totalUsers})</CardTitle>
+            <CardDescription>
+              Manage user accounts and permissions
+            </CardDescription>
+          </div>
+          <Button>
+            Add User
+          </Button>
+        </div>
+
+        {/* Search and Filters */}
+        <div className="flex gap-4 mt-4">
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                className="pl-10"
+              />
+            </div>
+          </div>
+          
+          <Select value={roleFilter} onValueChange={setRoleFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Roles</SelectItem>
+              <SelectItem value="homeowner">Homeowners</SelectItem>
+              <SelectItem value="installer">Installers</SelectItem>
+              <SelectItem value="admin">Admins</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Button onClick={handleSearch} disabled={isPending}>
+            <Filter className="h-4 w-4 mr-2" />
+            Filter
+          </Button>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>User</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Quotes</TableHead>
+              <TableHead>Revenue</TableHead>
+              <TableHead>Joined</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((user) => (
+              <TableRow key={user.id}>
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={user.avatar_url} />
+                      <AvatarFallback>
+                        {user.full_name?.slice(0, 2).toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="font-medium">{user.full_name || 'No name'}</div>
+                      <div className="text-sm text-muted-foreground">{user.email}</div>
+                    </div>
+                  </div>
+                </TableCell>
+                
+                <TableCell>
+                  <Badge variant={getRoleColor(user.role)}>
+                    {user.role}
+                  </Badge>
+                </TableCell>
+                
+                <TableCell>
+                  <Badge variant={getStatusColor(user.status)}>
+                    {user.status}
+                  </Badge>
+                </TableCell>
+                
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    {user.solar_quotes?.[0]?.count || 0}
+                  </div>
+                </TableCell>
+                
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    {formatCurrency((user.payment_transactions?.[0]?.count || 0) * 100)}
+                  </div>
+                </TableCell>
+                
+                <TableCell>
+                  <div className="flex items-center gap-1">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    {formatDate(user.created_at)}
+                  </div>
+                </TableCell>
+                
+                <TableCell>
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => setSelectedUser(user)}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-4xl">
+                      <DialogHeader>
+                        <DialogTitle>User Details: {user.full_name}</DialogTitle>
+                      </DialogHeader>
+                      <UserDetailsModal user={user} onAction={handleUserAction} />
+                    </DialogContent>
+                  </Dialog>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+
+        {/* Pagination */}
+        <div className="flex items-center justify-between mt-6">
+          <div className="text-sm text-muted-foreground">
+            Showing {users.length} of {totalUsers} users
+          </div>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm"
+              disabled={currentPage === 1}
+              onClick={() => router.push(`/admin/users?page=${currentPage - 1}`)}
+            >
+              Previous
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              disabled={users.length < 50}
+              onClick={() => router.push(`/admin/users?page=${currentPage + 1}`)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function UserDetailsModal({ 
+  user, 
+  onAction 
+}: { 
+  user: any
+  onAction: (userId: string, action: string) => void 
+}) {
+  return (
+    <Tabs defaultValue="overview" className="w-full">
+      <TabsList className="grid w-full grid-cols-4">
+        <TabsTrigger value="overview">Overview</TabsTrigger>
+        <TabsTrigger value="activity">Activity</TabsTrigger>
+        <TabsTrigger value="quotes">Quotes</TabsTrigger>
+        <TabsTrigger value="actions">Actions</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="overview" className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Contact Information</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Mail className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">{user.email}</span>
+              </div>
+              {user.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{user.phone}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">Account Status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Role</span>
+                <Badge variant={getRoleColor(user.role)}>{user.role}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Status</span>
+                <Badge variant={getStatusColor(user.status)}>{user.status}</Badge>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Email Verified</span>
+                {user.email_verified ? (
+                  <CheckCircle className="h-4 w-4 text-green-600" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="actions" className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Button 
+            variant="outline"
+            onClick={() => onAction(user.id, 'suspend')}
+            disabled={user.status === 'suspended'}
+          >
+            <Ban className="h-4 w-4 mr-2" />
+            Suspend User
+          </Button>
+          
+          <Button 
+            variant="outline"
+            onClick={() => onAction(user.id, 'activate')}
+            disabled={user.status === 'active'}
+          >
+            <CheckCircle className="h-4 w-4 mr-2" />
+            Activate User
+          </Button>
+          
+          <Button 
+            variant="outline"
+            onClick={() => onAction(user.id, 'reset_password')}
+          >
+            <Shield className="h-4 w-4 mr-2" />
+            Reset Password
+          </Button>
+          
+          <Button 
+            variant="destructive"
+            onClick={() => onAction(user.id, 'delete')}
+          >
+            Delete User
+          </Button>
+        </div>
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+function getRoleColor(role: string) {
+  switch (role) {
+    case 'admin': return 'destructive'
+    case 'installer': return 'default'
+    case 'homeowner': return 'secondary'
+    default: return 'outline'
+  }
+}
+
+function getStatusColor(status: string) {
+  switch (status) {
+    case 'active': return 'default'
+    case 'suspended': return 'destructive'
+    case 'pending': return 'secondary'
+    default: return 'outline'
+  }
+}
+```
+
+### STEP 4: Quote Management System
+**Timeline:** Day 3
+**Files:** `app/(app)/admin/quotes/page.tsx`, `components/admin/QuoteManagement.tsx`
+
+```typescript
+// app/(app)/admin/quotes/page.tsx
+import { createClient } from '@/lib/supabase'
+import { QuoteManagement } from '@/components/admin/QuoteManagement'
+import { QuoteStats } from '@/components/admin/QuoteStats'
+
+export default async function QuotesPage({
+  searchParams,
+}: {
+  searchParams: { page?: string; status?: string; search?: string }
+}) {
+  const supabase = createClient()
+  
+  const page = parseInt(searchParams.page || '1')
+  const limit = 50
+  const offset = (page - 1) * limit
+
+  // Build query for quotes with related data
+  let query = supabase
+    .from('solar_quotes')
+    .select(`
+      *,
+      profiles!solar_quotes_user_id_fkey(full_name, email),
+      quote_versions!quote_versions_quote_id_fkey(
+        id, version_number, total_cost_cents, is_current, created_at,
+        installer_profiles!quote_versions_installer_id_fkey(company_name)
+      ),
+      bidding_rounds!bidding_rounds_quote_id_fkey(
+        id, round_number, status, end_time,
+        bids!bids_round_id_fkey(count)
+      )
+    `)
+    .range(offset, offset + limit - 1)
+    .order('created_at', { ascending: false })
+
+  // Apply filters
+  if (searchParams.status) {
+    query = query.eq('status', searchParams.status)
+  }
+
+  if (searchParams.search) {
+    query = query.or(`property_address.ilike.%${searchParams.search}%`)
+  }
+
+  const { data: quotes, error } = await query
+
+  if (error) {
+    console.error('Error fetching quotes:', error)
+    return <div>Error loading quotes</div>
+  }
+
+  // Get quote statistics
+  const { data: stats } = await supabase.rpc('get_quote_stats')
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Quote Management</h1>
+        <p className="text-gray-600">Monitor and manage all solar quotes</p>
+      </div>
+
+      <QuoteStats stats={stats} />
+
+      <QuoteManagement 
+        quotes={quotes || []}
+        currentPage={page}
+        searchParams={searchParams}
+      />
+    </div>
+  )
+}
+```
+
+### STEP 5: Analytics Dashboard
+**Timeline:** Day 4
+**Files:** `app/(app)/admin/analytics/page.tsx`, `components/admin/AnalyticsDashboard.tsx`
+
+```typescript
+// components/admin/AnalyticsDashboard.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { DatePickerWithRange } from '@/components/ui/date-range-picker'
+import { 
+  LineChart, 
+  Line, 
+  AreaChart, 
+  Area, 
+  BarChart, 
+  Bar, 
+  PieChart, 
+  Pie, 
+  Cell,
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  Legend, 
+  ResponsiveContainer 
+} from 'recharts'
+import { Download, RefreshCw } from 'lucide-react'
+import { useToast } from '@/components/ui/use-toast'
+import { formatCurrency, formatDate } from '@/lib/utils'
+
+interface AnalyticsData {
+  userGrowth: Array<{ date: string; users: number; installers: number; homeowners: number }>
+  quoteMetrics: Array<{ date: string; created: number; completed: number; revenue: number }>
+  geographicData: Array<{ state: string; quotes: number; revenue: number }>
+  systemSizes: Array<{ size: string; count: number; percentage: number }>
+  conversionFunnel: Array<{ stage: string; count: number; rate: number }>
+}
+
+export function AnalyticsDashboard() {
+  const [data, setData] = useState<AnalyticsData | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [dateRange, setDateRange] = useState({
+    from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+    to: new Date()
+  })
+  const [timeframe, setTimeframe] = useState('30d')
+  
+  const { toast } = useToast()
+
+  useEffect(() => {
+    fetchAnalyticsData()
+  }, [dateRange, timeframe])
+
+  const fetchAnalyticsData = async () => {
+    setLoading(true)
+    try {
+      const response = await fetch('/api/admin/analytics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          startDate: dateRange.from.toISOString(),
+          endDate: dateRange.to.toISOString(),
+          timeframe,
+        }),
+      })
+
+      if (!response.ok) throw new Error('Failed to fetch analytics')
+
+      const analytics = await response.json()
+      setData(analytics)
+    } catch (error) {
+      console.error('Analytics fetch error:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load analytics data',
+        variant: 'destructive',
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const exportData = async (type: string) => {
+    try {
+      const response = await fetch(`/api/admin/analytics/export?type=${type}&timeframe=${timeframe}`)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `analytics-${type}-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: 'Success',
+        description: 'Analytics data exported successfully',
+      })
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to export data',
+        variant: 'destructive',
+      })
+    }
+  }
+
+  if (loading || !data) {
+    return (
+      <div className="space-y-6">
+        <div className="animate-pulse space-y-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i}>
+              <CardHeader>
+                <div className="h-4 bg-gray-200 rounded w-1/4"></div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64 bg-gray-200 rounded"></div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8']
+
+  return (
+    <div className="space-y-6">
+      {/* Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Select value={timeframe} onValueChange={setTimeframe}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="7d">Last 7 days</SelectItem>
+              <SelectItem value="30d">Last 30 days</SelectItem>
+              <SelectItem value="90d">Last 3 months</SelectItem>
+              <SelectItem value="1y">Last year</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <DatePickerWithRange
+            date={dateRange}
+            onDateChange={setDateRange}
+          />
+        </div>
+
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={fetchAnalyticsData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+          <Button variant="outline" onClick={() => exportData('all')}>
+            <Download className="h-4 w-4 mr-2" />
+            Export
+          </Button>
+        </div>
+      </div>
+
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="quotes">Quotes</TabsTrigger>
+          <TabsTrigger value="geography">Geography</TabsTrigger>
+          <TabsTrigger value="conversion">Conversion</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* User Growth Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle>User Growth</CardTitle>
+                <CardDescription>New user registrations over time</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <AreaChart data={data.userGrowth}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="homeowners"
+                      stackId="1"
+                      stroke="#8884d8"
+                      fill="#8884d8"
+                      name="Homeowners"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="installers"
+                      stackId="1"
+                      stroke="#82ca9d"
+                      fill="#82ca9d"
+                      name="Installers"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Quote Metrics */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quote Metrics</CardTitle>
+                <CardDescription>Quote creation and completion rates</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={data.quoteMetrics}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="created"
+                      stroke="#8884d8"
+                      name="Created"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="completed"
+                      stroke="#82ca9d"
+                      name="Completed"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="geography" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Geographic Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Quotes by State</CardTitle>
+                <CardDescription>Geographic distribution of solar quotes</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={data.geographicData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="state" />
+                    <YAxis />
+                    <Tooltip />
+                    <Bar dataKey="quotes" fill="#8884d8" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* System Sizes */}
+            <Card>
+              <CardHeader>
+                <CardTitle>System Size Distribution</CardTitle>
+                <CardDescription>Most popular solar system sizes</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={data.systemSizes}
+                      cx="50%"
+                      cy="50%"
+                      labelLine={false}
+                      label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                      outerRadius={80}
+                      fill="#8884d8"
+                      dataKey="count"
+                      nameKey="size"
+                    >
+                      {data.systemSizes.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="conversion" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Conversion Funnel</CardTitle>
+              <CardDescription>User journey from registration to quote completion</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {data.conversionFunnel.map((stage, index) => (
+                  <div key={stage.stage} className="flex items-center gap-4">
+                    <div className="w-32 text-sm font-medium">{stage.stage}</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-4 relative">
+                      <div
+                        className="bg-blue-600 h-4 rounded-full"
+                        style={{ width: `${stage.rate}%` }}
+                      />
+                      <div className="absolute inset-0 flex items-center justify-center text-xs text-white font-medium">
+                        {stage.count.toLocaleString()} ({stage.rate.toFixed(1)}%)
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+```
+
+### STEP 6: Admin API Routes
+**Timeline:** Day 4-5
+**Files:** Multiple API routes for admin functionality
+
+```typescript
+// app/api/admin/users/actions/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { z } from 'zod'
+
+const actionSchema = z.object({
+  userId: z.string().uuid(),
+  action: z.enum(['suspend', 'activate', 'delete', 'reset_password', 'change_role']),
+  newRole: z.enum(['homeowner', 'installer', 'admin']).optional(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Verify admin authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check admin permissions
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('is_admin, role')
+      .eq('id', user.id)
+      .single()
+
+    if (!adminProfile?.is_admin && adminProfile?.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // Validate request
+    const body = await request.json()
+    const { userId, action, newRole } = actionSchema.parse(body)
+
+    let result
+    switch (action) {
+      case 'suspend':
+        result = await supabase
+          .from('profiles')
+          .update({ status: 'suspended' })
+          .eq('id', userId)
+        break
+
+      case 'activate':
+        result = await supabase
+          .from('profiles')
+          .update({ status: 'active' })
+          .eq('id', userId)
+        break
+
+      case 'delete':
+        // Soft delete - mark as deleted
+        result = await supabase
+          .from('profiles')
+          .update({ 
+            status: 'deleted',
+            email: `deleted_${Date.now()}@example.com`,
+            full_name: '[Deleted User]'
+          })
+          .eq('id', userId)
+        break
+
+      case 'change_role':
+        if (!newRole) {
+          return NextResponse.json({ error: 'New role required' }, { status: 400 })
+        }
+        result = await supabase
+          .from('profiles')
+          .update({ role: newRole })
+          .eq('id', userId)
+        break
+
+      case 'reset_password':
+        // Send password reset email
+        result = await supabase.auth.resetPasswordForEmail(
+          // Get user email first
+          (await supabase.from('profiles').select('email').eq('id', userId).single()).data?.email
+        )
+        break
+
+      default:
+        return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
+    }
+
+    if (result?.error) {
+      throw result.error
+    }
+
+    // Log admin action
+    await supabase.rpc('log_event', {
+      p_category: 'admin',
+      p_event_type: 'user_action',
+      p_message: `Admin ${action} action performed`,
+      p_severity: 'info',
+      p_user_id: user.id,
+      p_details: {
+        targetUserId: userId,
+        action,
+        newRole,
+      },
+    })
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Admin user action error:', error)
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid request data' },
+        { status: 400 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to perform action' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Admin Dashboard:
+- [ ] Dashboard loads with key metrics
+- [ ] Navigation sidebar works correctly
+- [ ] User authentication and authorization enforced
+- [ ] Real-time data updates properly
+
+### User Management:
+- [ ] User list displays with proper pagination
+- [ ] Search and filtering functions correctly
+- [ ] User actions (suspend, activate, delete) work
+- [ ] User details modal shows comprehensive information
+
+### Quote Management:
+- [ ] Quote list shows all necessary data
+- [ ] Quote status updates function correctly
+- [ ] Bidding oversight tools working
+- [ ] Quote versioning visible to admins
+
+### Analytics:
+- [ ] Charts render correctly with real data
+- [ ] Date range filtering works
+- [ ] Export functionality generates proper files
+- [ ] Performance metrics accurate
+
+### Security:
+- [ ] Admin-only access properly enforced
+- [ ] All admin actions logged and auditable
+- [ ] Sensitive data properly protected
+- [ ] Rate limiting implemented for admin actions
+
+---
+
+## 🚨 PRODUCTION CONSIDERATIONS
+
+### Access Control:
+- Implement role-based permissions with granular controls
+- Add IP whitelisting for admin panel access
+- Require MFA for admin accounts
+- Add session timeout for admin users
+
+### Performance:
+- Cache dashboard data appropriately
+- Implement lazy loading for large data sets
+- Add database indexes for admin queries
+- Monitor and optimize query performance
+
+### Monitoring:
+- Add admin action monitoring and alerting
+- Implement audit log retention policies
+- Track admin panel usage metrics
+- Set up error monitoring and notifications
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Test all admin functionality thoroughly
+2. Set up monitoring and alerting systems
+3. Create admin user training documentation
+4. Implement additional reporting features
+5. Proceed to Production Deployment Setup phase

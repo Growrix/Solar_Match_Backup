@@ -1,0 +1,1411 @@
+# BIDDING SYSTEM IMPLEMENTATION - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** HIGH - EXECUTE AFTER REAL-TIME CHAT  
+**Dependencies:** RealTimeChatSystem.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Implement 3-round competitive bidding system with auto-extensions and sealed bidding
+**Estimated Time:** 3-4 days
+**Risk Level:** HIGH (Complex business logic)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Create bidding service with business logic
+2. Implement sealed bidding mechanism
+3. Build round management and auto-extensions
+4. Create real-time bidding notifications
+5. Test complete bidding workflow
+
+---
+
+## 🎯 BIDDING SYSTEM REQUIREMENTS
+
+**Core Features:**
+- ✅ 3-round sealed bidding system
+- ✅ Auto-extension when bids submitted in last 30 minutes
+- ✅ Minimum 3 participants per round
+- ✅ Real-time bid updates for homeowners
+- ✅ Winner selection and payment processing
+- ✅ Comprehensive audit trail
+- ✅ Installer notification system
+
+**Business Rules:**
+- Each round lasts 24 hours (configurable)
+- Bids are sealed until round ends
+- Winners advance to next round
+- Final round determines winning installer
+- Platform takes 3% commission on successful deals
+
+---
+
+## 🔧 EXECUTION STEPS
+
+### STEP 1: Bidding Service Implementation
+**Timeline:** Day 1 Full Day
+**Files:** `lib/services/biddingService.ts`
+
+```typescript
+// lib/services/biddingService.ts
+import { createClient } from '@/lib/supabase'
+import type { 
+  BiddingRound, 
+  Bid, 
+  BidHistory,
+  InsertBiddingRound,
+  InsertBid,
+  InsertBidHistory 
+} from '@/types/database.types'
+
+export class BiddingService {
+  private supabase = createClient()
+
+  /**
+   * Create initial bidding round for a quote
+   */
+  async createBiddingRound(
+    quoteId: string,
+    startTime?: Date,
+    durationHours: number = 24
+  ): Promise<BiddingRound> {
+    try {
+      const start = startTime || new Date()
+      const end = new Date(start.getTime() + (durationHours * 60 * 60 * 1000))
+
+      const { data: biddingRound, error } = await this.supabase
+        .from('bidding_rounds')
+        .insert({
+          quote_id: quoteId,
+          round_number: 1,
+          start_time: start.toISOString(),
+          end_time: end.toISOString(),
+          status: 'active',
+          min_participants: 3,
+          current_participants: 0,
+        } as InsertBiddingRound)
+        .select()
+        .single()
+
+      if (error || !biddingRound) {
+        throw new Error('Failed to create bidding round')
+      }
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'bidding',
+        p_event_type: 'round_created',
+        p_message: `Bidding round ${biddingRound.round_number} created for quote ${quoteId}`,
+        p_severity: 'info',
+        p_details: {
+          biddingRoundId: biddingRound.id,
+          quoteId,
+          roundNumber: biddingRound.round_number,
+        },
+      })
+
+      return biddingRound
+    } catch (error) {
+      console.error('Error creating bidding round:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Submit a bid
+   */
+  async submitBid(
+    biddingRoundId: string,
+    installerId: string,
+    bidData: {
+      amount_cents: number
+      system_size_kw: number
+      warranty_years?: number
+      proposal_text?: string
+      installation_timeline_days?: number
+      includes_battery?: boolean
+      battery_size_kwh?: number
+    }
+  ): Promise<Bid> {
+    try {
+      // Verify bidding round is active
+      const { data: biddingRound, error: roundError } = await this.supabase
+        .from('bidding_rounds')
+        .select('*')
+        .eq('id', biddingRoundId)
+        .single()
+
+      if (roundError || !biddingRound) {
+        throw new Error('Bidding round not found')
+      }
+
+      if (biddingRound.status !== 'active') {
+        throw new Error('Bidding round is not active')
+      }
+
+      // Check if round has ended
+      const now = new Date()
+      const endTime = new Date(biddingRound.extended_end_time || biddingRound.end_time)
+      
+      if (now > endTime) {
+        throw new Error('Bidding round has ended')
+      }
+
+      // Check if installer already has a bid in this round
+      const { data: existingBid } = await this.supabase
+        .from('bids')
+        .select('id')
+        .eq('bidding_round_id', biddingRoundId)
+        .eq('installer_id', installerId)
+        .single()
+
+      let bid: Bid
+
+      if (existingBid) {
+        // Update existing bid
+        const { data: updatedBid, error: updateError } = await this.supabase
+          .from('bids')
+          .update({
+            ...bidData,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingBid.id)
+          .select()
+          .single()
+
+        if (updateError || !updatedBid) {
+          throw new Error('Failed to update bid')
+        }
+
+        bid = updatedBid
+
+        // Log bid update
+        await this.createBidHistory(bid.id, 'updated', installerId, bidData)
+      } else {
+        // Create new bid
+        const { data: newBid, error: createError } = await this.supabase
+          .from('bids')
+          .insert({
+            bidding_round_id: biddingRoundId,
+            quote_id: biddingRound.quote_id,
+            installer_id: installerId,
+            ...bidData,
+            status: 'submitted',
+          } as InsertBid)
+          .select()
+          .single()
+
+        if (createError || !newBid) {
+          throw new Error('Failed to create bid')
+        }
+
+        bid = newBid
+
+        // Update participant count
+        await this.supabase
+          .from('bidding_rounds')
+          .update({
+            current_participants: biddingRound.current_participants + 1,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', biddingRoundId)
+
+        // Log bid creation
+        await this.createBidHistory(bid.id, 'created', installerId, bidData)
+      }
+
+      // Check for auto-extension
+      await this.checkAutoExtension(biddingRound, now)
+
+      return bid
+    } catch (error) {
+      console.error('Error submitting bid:', error)
+      throw error
+    }
+  }
+
+  /**
+   * End bidding round and process results
+   */
+  async endBiddingRound(biddingRoundId: string): Promise<{
+    winningBid?: Bid
+    nextRound?: BiddingRound
+    isComplete: boolean
+  }> {
+    try {
+      const { data: biddingRound, error: roundError } = await this.supabase
+        .from('bidding_rounds')
+        .select('*')
+        .eq('id', biddingRoundId)
+        .single()
+
+      if (roundError || !biddingRound) {
+        throw new Error('Bidding round not found')
+      }
+
+      // Get all bids for this round
+      const { data: bids, error: bidsError } = await this.supabase
+        .from('bids')
+        .select('*')
+        .eq('bidding_round_id', biddingRoundId)
+        .eq('status', 'submitted')
+        .order('amount_cents', { ascending: true }) // Lowest bid wins
+
+      if (bidsError) {
+        throw new Error('Failed to fetch bids')
+      }
+
+      if (!bids || bids.length === 0) {
+        // No bids, mark round as completed
+        await this.supabase
+          .from('bidding_rounds')
+          .update({
+            status: 'completed',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', biddingRoundId)
+
+        return { isComplete: true }
+      }
+
+      // Determine winning bid(s)
+      const winningBid = bids[0] // Lowest bid
+      
+      // Mark winning bid
+      await this.supabase
+        .from('bids')
+        .update({
+          is_winner: true,
+          status: 'selected',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', winningBid.id)
+
+      // Mark losing bids
+      const losingBidIds = bids.slice(1).map(bid => bid.id)
+      if (losingBidIds.length > 0) {
+        await this.supabase
+          .from('bids')
+          .update({
+            status: 'rejected',
+            updated_at: new Date().toISOString(),
+          })
+          .in('id', losingBidIds)
+      }
+
+      // Update bidding round
+      await this.supabase
+        .from('bidding_rounds')
+        .update({
+          status: 'completed',
+          winning_bid_id: winningBid.id,
+          winning_amount_cents: winningBid.amount_cents,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', biddingRoundId)
+
+      // Check if we should create next round
+      let nextRound: BiddingRound | undefined
+
+      if (biddingRound.round_number < biddingRound.max_rounds && bids.length >= 3) {
+        // Create next round with winners
+        nextRound = await this.createNextRound(biddingRound, [winningBid])
+      }
+
+      const isComplete = !nextRound || biddingRound.round_number === biddingRound.max_rounds
+
+      // Log round completion
+      await this.supabase.rpc('log_event', {
+        p_category: 'bidding',
+        p_event_type: 'round_completed',
+        p_message: `Bidding round ${biddingRound.round_number} completed with ${bids.length} bids`,
+        p_severity: 'info',
+        p_details: {
+          biddingRoundId,
+          roundNumber: biddingRound.round_number,
+          winningBidId: winningBid.id,
+          winningAmount: winningBid.amount_cents,
+          isComplete,
+        },
+      })
+
+      return { winningBid, nextRound, isComplete }
+    } catch (error) {
+      console.error('Error ending bidding round:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get active bidding rounds that need to be ended
+   */
+  async getExpiredRounds(): Promise<BiddingRound[]> {
+    try {
+      const now = new Date().toISOString()
+
+      const { data: expiredRounds, error } = await this.supabase
+        .from('bidding_rounds')
+        .select('*')
+        .in('status', ['active', 'extended'])
+        .or(`end_time.lt.${now},extended_end_time.lt.${now}`)
+
+      if (error) {
+        throw new Error('Failed to fetch expired rounds')
+      }
+
+      return expiredRounds || []
+    } catch (error) {
+      console.error('Error getting expired rounds:', error)
+      return []
+    }
+  }
+
+  /**
+   * Get bidding history for a quote
+   */
+  async getBiddingHistory(quoteId: string): Promise<{
+    rounds: BiddingRound[]
+    bids: Bid[]
+  }> {
+    try {
+      const { data: rounds, error: roundsError } = await this.supabase
+        .from('bidding_rounds')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .order('round_number', { ascending: true })
+
+      if (roundsError) {
+        throw new Error('Failed to fetch bidding rounds')
+      }
+
+      const roundIds = rounds?.map(r => r.id) || []
+
+      const { data: bids, error: bidsError } = await this.supabase
+        .from('bids')
+        .select(`
+          *,
+          installer_users!inner(
+            id,
+            company_name,
+            first_name,
+            last_name
+          )
+        `)
+        .in('bidding_round_id', roundIds)
+        .order('created_at', { ascending: false })
+
+      if (bidsError) {
+        throw new Error('Failed to fetch bids')
+      }
+
+      return {
+        rounds: rounds || [],
+        bids: bids || [],
+      }
+    } catch (error) {
+      console.error('Error getting bidding history:', error)
+      return { rounds: [], bids: [] }
+    }
+  }
+
+  /**
+   * Withdraw a bid
+   */
+  async withdrawBid(bidId: string, installerId: string): Promise<void> {
+    try {
+      // Verify bid belongs to installer
+      const { data: bid, error: bidError } = await this.supabase
+        .from('bids')
+        .select('*')
+        .eq('id', bidId)
+        .eq('installer_id', installerId)
+        .single()
+
+      if (bidError || !bid) {
+        throw new Error('Bid not found or unauthorized')
+      }
+
+      // Check if bid can be withdrawn
+      const { data: biddingRound } = await this.supabase
+        .from('bidding_rounds')
+        .select('*')
+        .eq('id', bid.bidding_round_id)
+        .single()
+
+      if (!biddingRound || biddingRound.status !== 'active') {
+        throw new Error('Cannot withdraw bid from inactive round')
+      }
+
+      // Withdraw bid
+      await this.supabase
+        .from('bids')
+        .update({
+          status: 'withdrawn',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bidId)
+
+      // Create history record
+      await this.createBidHistory(bidId, 'withdrawn', installerId)
+
+      // Update participant count
+      await this.supabase
+        .from('bidding_rounds')
+        .update({
+          current_participants: Math.max(0, biddingRound.current_participants - 1),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', bid.bidding_round_id)
+    } catch (error) {
+      console.error('Error withdrawing bid:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Check for auto-extension
+   */
+  private async checkAutoExtension(
+    biddingRound: BiddingRound,
+    currentTime: Date
+  ): Promise<void> {
+    if (!biddingRound.auto_extend_on_late_bid) return
+
+    const endTime = new Date(biddingRound.extended_end_time || biddingRound.end_time)
+    const extensionThreshold = new Date(endTime.getTime() - (biddingRound.extension_minutes * 60 * 1000))
+
+    // If current time is within extension threshold, extend the round
+    if (currentTime >= extensionThreshold && currentTime <= endTime) {
+      const newEndTime = new Date(Math.max(
+        endTime.getTime() + (biddingRound.extension_minutes * 60 * 1000),
+        currentTime.getTime() + (biddingRound.extension_minutes * 60 * 1000)
+      ))
+
+      await this.supabase
+        .from('bidding_rounds')
+        .update({
+          extended_end_time: newEndTime.toISOString(),
+          status: 'extended',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', biddingRound.id)
+
+      // Log extension
+      await this.supabase.rpc('log_event', {
+        p_category: 'bidding',
+        p_event_type: 'round_extended',
+        p_message: `Bidding round ${biddingRound.round_number} extended due to late bid`,
+        p_severity: 'info',
+        p_details: {
+          biddingRoundId: biddingRound.id,
+          newEndTime: newEndTime.toISOString(),
+        },
+      })
+    }
+  }
+
+  /**
+   * Create next bidding round
+   */
+  private async createNextRound(
+    currentRound: BiddingRound,
+    qualifiedBids: Bid[]
+  ): Promise<BiddingRound> {
+    const nextRoundNumber = currentRound.round_number + 1
+    const startTime = new Date()
+    const endTime = new Date(startTime.getTime() + (24 * 60 * 60 * 1000)) // 24 hours
+
+    const { data: nextRound, error } = await this.supabase
+      .from('bidding_rounds')
+      .insert({
+        quote_id: currentRound.quote_id,
+        round_number: nextRoundNumber,
+        max_rounds: currentRound.max_rounds,
+        start_time: startTime.toISOString(),
+        end_time: endTime.toISOString(),
+        status: 'active',
+        min_participants: Math.min(qualifiedBids.length, 3),
+        current_participants: 0,
+      } as InsertBiddingRound)
+      .select()
+      .single()
+
+    if (error || !nextRound) {
+      throw new Error('Failed to create next round')
+    }
+
+    return nextRound
+  }
+
+  /**
+   * Create bid history record
+   */
+  private async createBidHistory(
+    bidId: string,
+    action: 'created' | 'updated' | 'withdrawn' | 'selected' | 'rejected',
+    changedBy: string,
+    values?: any
+  ): Promise<void> {
+    try {
+      await this.supabase
+        .from('bid_history')
+        .insert({
+          bid_id: bidId,
+          action,
+          changed_by: changedBy,
+          new_values: values ? JSON.stringify(values) : null,
+        } as InsertBidHistory)
+    } catch (error) {
+      console.error('Error creating bid history:', error)
+    }
+  }
+}
+
+// Export singleton instance
+export const biddingService = new BiddingService()
+```
+
+### STEP 2: Bidding Hooks Implementation
+**Timeline:** Day 2 Morning
+**Files:** `hooks/useBidding.ts`
+
+```typescript
+// hooks/useBidding.ts
+import { useState, useEffect, useCallback } from 'react'
+import { biddingService } from '@/lib/services/biddingService'
+import { realtimeService } from '@/lib/realtimeService'
+import type { BiddingRound, Bid } from '@/types/database.types'
+
+export interface UseBiddingOptions {
+  quoteId: string
+  installerId?: string
+  isHomeowner?: boolean
+}
+
+export function useBidding({ quoteId, installerId, isHomeowner }: UseBiddingOptions) {
+  const [biddingHistory, setBiddingHistory] = useState<{
+    rounds: BiddingRound[]
+    bids: Bid[]
+  }>({ rounds: [], bids: [] })
+  const [currentRound, setCurrentRound] = useState<BiddingRound | null>(null)
+  const [myBids, setMyBids] = useState<Bid[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Load bidding data
+  const loadBiddingData = useCallback(async () => {
+    if (!quoteId) return
+
+    try {
+      setIsLoading(true)
+      const history = await biddingService.getBiddingHistory(quoteId)
+      setBiddingHistory(history)
+
+      // Find current active round
+      const activeRound = history.rounds.find(r => 
+        r.status === 'active' || r.status === 'extended'
+      )
+      setCurrentRound(activeRound || null)
+
+      // Filter installer's bids if installerId provided
+      if (installerId) {
+        const installerBids = history.bids.filter(bid => 
+          bid.installer_id === installerId
+        )
+        setMyBids(installerBids)
+      }
+
+      setError(null)
+    } catch (err) {
+      setError('Failed to load bidding data')
+      console.error('Error loading bidding data:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [quoteId, installerId])
+
+  // Subscribe to real-time updates
+  useEffect(() => {
+    if (!currentRound) return
+
+    const unsubscribe = realtimeService.subscribeToChatRoomUpdates(
+      currentRound.id,
+      (updatedRound) => {
+        setCurrentRound(updatedRound)
+        // Reload full data when round status changes
+        if (updatedRound.status === 'completed') {
+          loadBiddingData()
+        }
+      }
+    )
+
+    return unsubscribe
+  }, [currentRound?.id, loadBiddingData])
+
+  // Load data on mount
+  useEffect(() => {
+    loadBiddingData()
+  }, [loadBiddingData])
+
+  // Submit bid
+  const submitBid = useCallback(async (bidData: {
+    amount_cents: number
+    system_size_kw: number
+    warranty_years?: number
+    proposal_text?: string
+    installation_timeline_days?: number
+    includes_battery?: boolean
+    battery_size_kwh?: number
+  }) => {
+    if (!currentRound || !installerId) {
+      throw new Error('No active round or installer ID')
+    }
+
+    try {
+      const bid = await biddingService.submitBid(
+        currentRound.id,
+        installerId,
+        bidData
+      )
+
+      // Update local state
+      setMyBids(prev => {
+        const existing = prev.find(b => b.bidding_round_id === currentRound.id)
+        if (existing) {
+          return prev.map(b => b.id === existing.id ? bid : b)
+        } else {
+          return [...prev, bid]
+        }
+      })
+
+      return bid
+    } catch (err) {
+      console.error('Error submitting bid:', err)
+      throw err
+    }
+  }, [currentRound, installerId])
+
+  // Withdraw bid
+  const withdrawBid = useCallback(async (bidId: string) => {
+    if (!installerId) {
+      throw new Error('Installer ID required')
+    }
+
+    try {
+      await biddingService.withdrawBid(bidId, installerId)
+      
+      // Update local state
+      setMyBids(prev => 
+        prev.map(bid => 
+          bid.id === bidId 
+            ? { ...bid, status: 'withdrawn' as const }
+            : bid
+        )
+      )
+    } catch (err) {
+      console.error('Error withdrawing bid:', err)
+      throw err
+    }
+  }, [installerId])
+
+  // Calculate time remaining
+  const getTimeRemaining = useCallback(() => {
+    if (!currentRound) return 0
+
+    const endTime = new Date(currentRound.extended_end_time || currentRound.end_time)
+    const now = new Date()
+    return Math.max(0, endTime.getTime() - now.getTime())
+  }, [currentRound])
+
+  // Check if installer can bid
+  const canBid = useCallback(() => {
+    if (!currentRound || !installerId || isHomeowner) return false
+    
+    const now = new Date()
+    const endTime = new Date(currentRound.extended_end_time || currentRound.end_time)
+    
+    return currentRound.status === 'active' && now < endTime
+  }, [currentRound, installerId, isHomeowner])
+
+  // Get current installer's bid for active round
+  const getCurrentBid = useCallback(() => {
+    if (!currentRound || !installerId) return null
+    
+    return myBids.find(bid => 
+      bid.bidding_round_id === currentRound.id && 
+      bid.status !== 'withdrawn'
+    ) || null
+  }, [currentRound, installerId, myBids])
+
+  // Get bid statistics for homeowner view
+  const getBidStats = useCallback(() => {
+    if (!currentRound) return null
+
+    const roundBids = biddingHistory.bids.filter(bid => 
+      bid.bidding_round_id === currentRound.id && 
+      bid.status === 'submitted'
+    )
+
+    if (roundBids.length === 0) return null
+
+    const amounts = roundBids.map(bid => bid.amount_cents)
+    const lowest = Math.min(...amounts)
+    const highest = Math.max(...amounts)
+    const average = amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length
+
+    return {
+      count: roundBids.length,
+      lowest,
+      highest,
+      average,
+    }
+  }, [currentRound, biddingHistory.bids])
+
+  return {
+    biddingHistory,
+    currentRound,
+    myBids,
+    isLoading,
+    error,
+    submitBid,
+    withdrawBid,
+    getTimeRemaining,
+    canBid,
+    getCurrentBid,
+    getBidStats,
+    reload: loadBiddingData,
+  }
+}
+```
+
+### STEP 3: Bidding UI Components
+**Timeline:** Day 2 Afternoon to Day 3
+**Files:** Multiple React components
+
+**Bidding Dashboard Component:**
+```typescript
+// components/bidding/BiddingDashboard.tsx
+'use client'
+
+import { useState } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { 
+  Clock, 
+  Users, 
+  TrendingDown, 
+  Trophy,
+  AlertCircle,
+  Gavel,
+} from 'lucide-react'
+import { useBidding } from '@/hooks/useBidding'
+import { BidSubmissionForm } from './BidSubmissionForm'
+import { BidHistory } from './BidHistory'
+import { BidStats } from './BidStats'
+import { formatCurrency, formatTimeRemaining } from '@/lib/utils'
+import type { SolarQuote } from '@/types/database.types'
+
+interface BiddingDashboardProps {
+  quote: SolarQuote
+  userId: string
+  userType: 'homeowner' | 'installer'
+  className?: string
+}
+
+export function BiddingDashboard({
+  quote,
+  userId,
+  userType,
+  className,
+}: BiddingDashboardProps) {
+  const [activeTab, setActiveTab] = useState('overview')
+
+  const {
+    biddingHistory,
+    currentRound,
+    myBids,
+    isLoading,
+    error,
+    submitBid,
+    withdrawBid,
+    getTimeRemaining,
+    canBid,
+    getCurrentBid,
+    getBidStats,
+    reload,
+  } = useBidding({
+    quoteId: quote.id,
+    installerId: userType === 'installer' ? userId : undefined,
+    isHomeowner: userType === 'homeowner',
+  })
+
+  const timeRemaining = getTimeRemaining()
+  const currentBid = getCurrentBid()
+  const bidStats = getBidStats()
+  const isActiveRound = currentRound?.status === 'active' || currentRound?.status === 'extended'
+
+  if (isLoading) {
+    return (
+      <Card className={className}>
+        <CardContent className="flex items-center justify-center h-64">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card className={className}>
+        <CardContent className="flex items-center justify-center h-64">
+          <div className="text-center space-y-2">
+            <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
+            <p className="text-destructive">{error}</p>
+            <Button variant="outline" onClick={reload}>
+              Try Again
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className={className}>
+      {/* Header */}
+      <Card className="mb-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Gavel className="h-5 w-5" />
+                Bidding System
+              </CardTitle>
+              <CardDescription>
+                Quote #{quote.id.slice(-8)} - {quote.system_size}kW Solar System
+              </CardDescription>
+            </div>
+            <Badge variant={isActiveRound ? 'default' : 'secondary'}>
+              {currentRound 
+                ? `Round ${currentRound.round_number} - ${currentRound.status}`
+                : 'No Active Round'
+              }
+            </Badge>
+          </div>
+        </CardHeader>
+
+        {currentRound && isActiveRound && (
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Time Remaining */}
+              <div className="flex items-center gap-3">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Time Remaining</p>
+                  <p className="text-lg font-bold text-primary">
+                    {formatTimeRemaining(timeRemaining)}
+                  </p>
+                </div>
+              </div>
+
+              {/* Participants */}
+              <div className="flex items-center gap-3">
+                <Users className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Participants</p>
+                  <p className="text-lg font-bold">
+                    {currentRound.current_participants}/{currentRound.min_participants} min
+                  </p>
+                </div>
+              </div>
+
+              {/* Current Bid Status */}
+              <div className="flex items-center gap-3">
+                {userType === 'installer' ? (
+                  <>
+                    <TrendingDown className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Your Bid</p>
+                      <p className="text-lg font-bold">
+                        {currentBid 
+                          ? formatCurrency(currentBid.amount_cents)
+                          : 'Not Submitted'
+                        }
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <Trophy className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Lowest Bid</p>
+                      <p className="text-lg font-bold">
+                        {bidStats 
+                          ? formatCurrency(bidStats.lowest)
+                          : 'No Bids Yet'
+                        }
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Progress Bar */}
+            <div className="mt-4">
+              <div className="flex justify-between text-sm text-muted-foreground mb-2">
+                <span>Round Progress</span>
+                <span>
+                  {Math.round((1 - timeRemaining / (24 * 60 * 60 * 1000)) * 100)}%
+                </span>
+              </div>
+              <Progress 
+                value={Math.max(0, (1 - timeRemaining / (24 * 60 * 60 * 1000)) * 100)}
+                className="h-2"
+              />
+            </div>
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="submit">
+            {userType === 'installer' ? 'Submit Bid' : 'Bid Stats'}
+          </TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
+          <TabsTrigger value="rules">Rules</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="mt-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Current Round Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Round</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {currentRound ? (
+                  <div className="space-y-4">
+                    <div className="flex justify-between">
+                      <span>Round Number:</span>
+                      <Badge>{currentRound.round_number} of {currentRound.max_rounds}</Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Status:</span>
+                      <Badge variant={isActiveRound ? 'default' : 'secondary'}>
+                        {currentRound.status}
+                      </Badge>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Participants:</span>
+                      <span>{currentRound.current_participants}</span>
+                    </div>
+                    {currentRound.extended_end_time && (
+                      <div className="flex justify-between">
+                        <span>Extended:</span>
+                        <Badge variant="outline">Auto-Extended</Badge>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No active bidding round</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* My Bids (Installer) or Bid Statistics (Homeowner) */}
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {userType === 'installer' ? 'My Bids' : 'Bid Statistics'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {userType === 'installer' ? (
+                  <div className="space-y-3">
+                    {myBids.length > 0 ? (
+                      myBids.slice(0, 3).map((bid) => (
+                        <div key={bid.id} className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium">Round {bid.bidding_round_id}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {formatCurrency(bid.amount_cents)}
+                            </p>
+                          </div>
+                          <Badge variant={
+                            bid.status === 'submitted' ? 'default' :
+                            bid.status === 'selected' ? 'default' :
+                            bid.status === 'withdrawn' ? 'outline' :
+                            'secondary'
+                          }>
+                            {bid.status}
+                          </Badge>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-muted-foreground">No bids submitted yet</p>
+                    )}
+                  </div>
+                ) : (
+                  <BidStats stats={bidStats} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="submit" className="mt-6">
+          {userType === 'installer' ? (
+            <BidSubmissionForm
+              currentRound={currentRound}
+              currentBid={currentBid}
+              canBid={canBid()}
+              onSubmit={submitBid}
+              onWithdraw={() => currentBid && withdrawBid(currentBid.id)}
+              quote={quote}
+            />
+          ) : (
+            <BidStats stats={bidStats} detailed />
+          )}
+        </TabsContent>
+
+        <TabsContent value="history" className="mt-6">
+          <BidHistory 
+            history={biddingHistory}
+            userType={userType}
+            userId={userId}
+          />
+        </TabsContent>
+
+        <TabsContent value="rules" className="mt-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Bidding Rules</CardTitle>
+            </CardHeader>
+            <CardContent className="prose max-w-none">
+              <h3>How It Works</h3>
+              <ul>
+                <li>Bidding happens in up to 3 rounds</li>
+                <li>Each round lasts 24 hours</li>
+                <li>Minimum 3 participants required per round</li>
+                <li>Lowest bid wins each round</li>
+                <li>Winners advance to the next round</li>
+              </ul>
+
+              <h3>Auto-Extension</h3>
+              <ul>
+                <li>If a bid is submitted in the last 30 minutes, the round extends by 30 minutes</li>
+                <li>This ensures fair competition and prevents last-second sniping</li>
+              </ul>
+
+              <h3>Payment</h3>
+              <ul>
+                <li>$50 fee required to unlock lead and participate</li>
+                <li>3% platform commission on successful deals</li>
+                <li>Payment processed through secure Stripe integration</li>
+              </ul>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
+```
+
+### STEP 4: API Routes Implementation
+**Timeline:** Day 3 Afternoon
+**Files:** Multiple API routes
+
+**Submit Bid API:**
+```typescript
+// app/api/bidding/submit/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { biddingService } from '@/lib/services/biddingService'
+import { z } from 'zod'
+
+const submitBidSchema = z.object({
+  biddingRoundId: z.string().uuid(),
+  amount_cents: z.number().positive(),
+  system_size_kw: z.number().positive(),
+  warranty_years: z.number().min(5).max(25).optional(),
+  proposal_text: z.string().max(1000).optional(),
+  installation_timeline_days: z.number().positive().optional(),
+  includes_battery: z.boolean().optional(),
+  battery_size_kwh: z.number().positive().optional(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify user is an installer
+    const { data: installer, error: installerError } = await supabase
+      .from('installer_users')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (installerError || !installer) {
+      return NextResponse.json({ error: 'Only installers can submit bids' }, { status: 403 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const bidData = submitBidSchema.parse(body)
+
+    // Submit bid
+    const bid = await biddingService.submitBid(
+      bidData.biddingRoundId,
+      user.id,
+      {
+        amount_cents: bidData.amount_cents,
+        system_size_kw: bidData.system_size_kw,
+        warranty_years: bidData.warranty_years,
+        proposal_text: bidData.proposal_text,
+        installation_timeline_days: bidData.installation_timeline_days,
+        includes_battery: bidData.includes_battery,
+        battery_size_kwh: bidData.battery_size_kwh,
+      }
+    )
+
+    return NextResponse.json({ bid })
+  } catch (error) {
+    console.error('Submit bid error:', error)
+    
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to submit bid' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+### STEP 5: Background Job for Round Management
+**Timeline:** Day 4 Morning
+**Files:** `lib/jobs/biddingRounds.ts`, API endpoint
+
+**Background Job Service:**
+```typescript
+// lib/jobs/biddingRounds.ts
+import { biddingService } from '@/lib/services/biddingService'
+import { createServiceClient } from '@/lib/supabase'
+
+export class BiddingRoundsJob {
+  static async processExpiredRounds(): Promise<void> {
+    try {
+      console.log('Processing expired bidding rounds...')
+      
+      const expiredRounds = await biddingService.getExpiredRounds()
+      
+      if (expiredRounds.length === 0) {
+        console.log('No expired rounds found')
+        return
+      }
+
+      console.log(`Processing ${expiredRounds.length} expired rounds`)
+
+      for (const round of expiredRounds) {
+        try {
+          const result = await biddingService.endBiddingRound(round.id)
+          
+          console.log(`Round ${round.id} processed:`, result)
+
+          // Send notifications to participants
+          await this.notifyRoundCompletion(round, result)
+        } catch (error) {
+          console.error(`Error processing round ${round.id}:`, error)
+        }
+      }
+    } catch (error) {
+      console.error('Error in processExpiredRounds:', error)
+    }
+  }
+
+  private static async notifyRoundCompletion(
+    round: any,
+    result: { winningBid?: any; nextRound?: any; isComplete: boolean }
+  ): Promise<void> {
+    try {
+      const supabase = createServiceClient()
+
+      // Get all participants
+      const { data: bids } = await supabase
+        .from('bids')
+        .select(`
+          installer_id,
+          installer_users!inner(email, first_name)
+        `)
+        .eq('bidding_round_id', round.id)
+
+      if (!bids) return
+
+      // Send email notifications (implement with your email service)
+      for (const bid of bids) {
+        const isWinner = bid.installer_id === result.winningBid?.installer_id
+        
+        // Log notification (replace with actual email sending)
+        await supabase.rpc('log_event', {
+          p_category: 'bidding',
+          p_event_type: 'round_notification_sent',
+          p_message: `Round completion notification sent to installer`,
+          p_severity: 'info',
+          p_user_id: bid.installer_id,
+          p_details: {
+            roundId: round.id,
+            isWinner,
+            hasNextRound: !!result.nextRound,
+          },
+        })
+      }
+    } catch (error) {
+      console.error('Error sending notifications:', error)
+    }
+  }
+}
+```
+
+**Cron Job API Endpoint:**
+```typescript
+// app/api/cron/bidding-rounds/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { BiddingRoundsJob } from '@/lib/jobs/biddingRounds'
+
+export async function GET(request: NextRequest) {
+  try {
+    // Verify cron secret if in production
+    const authHeader = request.headers.get('authorization')
+    if (process.env.NODE_ENV === 'production') {
+      if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+    }
+
+    await BiddingRoundsJob.processExpiredRounds()
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Cron job error:', error)
+    return NextResponse.json(
+      { error: 'Failed to process expired rounds' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+### STEP 6: Integration with Quote Flow
+**Timeline:** Day 4 Afternoon
+**Files:** Update existing quote components
+
+**Update Quote Card to Show Bidding Status:**
+```typescript
+// components/homeowner/QuoteCard.tsx additions
+import { BiddingStatus } from '@/components/bidding/BiddingStatus'
+import { useBidding } from '@/hooks/useBidding'
+
+// Add to existing QuoteCard component
+const { currentRound, getBidStats } = useBidding({
+  quoteId: quote.id,
+  isHomeowner: true,
+})
+
+// Add bidding status section
+<Card>
+  <CardContent>
+    {/* Existing quote details */}
+    
+    {/* Add bidding section */}
+    <div className="mt-4 pt-4 border-t">
+      <BiddingStatus
+        currentRound={currentRound}
+        bidStats={getBidStats()}
+        quoteId={quote.id}
+      />
+    </div>
+  </CardContent>
+</Card>
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Core Functionality:
+- [ ] Bidding rounds create and manage correctly
+- [ ] Bids submit with proper validation
+- [ ] Auto-extension triggers on late bids
+- [ ] Round completion processes winners correctly
+- [ ] Multi-round progression works
+
+### Real-time Updates:
+- [ ] Bid submissions update in real-time
+- [ ] Round status changes propagate immediately
+- [ ] Time remaining updates continuously
+- [ ] Participant counts accurate
+
+### Business Logic:
+- [ ] Lowest bid wins each round
+- [ ] Minimum participant requirements respected
+- [ ] Payment integration prevents unpaid bidding
+- [ ] Commission calculation accurate
+
+### Security:
+- [ ] Only authorized installers can bid
+- [ ] Bids cannot be modified after submission
+- [ ] Round manipulation prevented
+- [ ] Audit trail complete
+
+---
+
+## 🚨 PRODUCTION DEPLOYMENT
+
+### Cron Job Setup:
+```bash
+# Add to your cron scheduler (Vercel Cron, etc.)
+# Run every minute to check for expired rounds
+*/1 * * * * curl -X GET https://yourdomain.com/api/cron/bidding-rounds \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+### Environment Variables:
+```bash
+CRON_SECRET=your-secure-cron-secret
+```
+
+### Monitoring:
+- Set up alerts for failed round processing
+- Monitor bid submission rates
+- Track round completion metrics
+- Alert on payment integration failures
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Test complete bidding flow with multiple installers
+2. Implement email notifications for round events
+3. Add mobile push notifications
+4. Create admin panel for bidding oversight
+5. Proceed to Quote Versioning System implementation
