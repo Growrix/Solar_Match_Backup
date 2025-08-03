@@ -1,0 +1,114 @@
+Folder/File,Type,Description
+
+# Root Directories
+app/,folder,Root Next.js app directory (App Router)
+components/,folder,All UI and logic components
+
+# App Directory
+app/layout.tsx,file,Root layout; sets up global font, metadata, and wraps all pages
+app/globals.css,file,Global CSS styles for the entire app
+app/page.tsx,file,Main landing page; combines hero, how-it-works, quote preview, blog, and more
+
+# Protected App Area (Authenticated Users)
+app/(app)/,folder,Protected app area for authenticated users (role-based: homeowner/installer)
+app/(app)/layout.tsx,file,App-level layout; checks authentication and redirects if not logged in
+
+## Homeowner Section
+app/(app)/homeowner/,folder,Homeowner dashboard and related pages
+app/(app)/homeowner/layout.tsx,file,Homeowner-only layout; redirects installers away, ensures correct role
+app/(app)/homeowner/dashboard/page.tsx,file,Homeowner dashboard main view; loads the dashboard UI
+app/(app)/homeowner/quotes/page.tsx,file,Homeowner's quote management page
+app/(app)/homeowner/written-quotes/page.tsx,file,Page for viewing written quotes received
+app/(app)/homeowner/bidding-room/page.tsx,file,Bidding room for homeowners to see installer bids
+app/(app)/homeowner/chat/page.tsx,file,Homeowner chat interface with installers
+app/(app)/homeowner/notifications/page.tsx,file,Homeowner notifications and alerts
+app/(app)/homeowner/quote-unlocks/page.tsx,file,Page for unlocking premium quote features
+app/(app)/homeowner/settings/page.tsx,file,Homeowner account and profile settings
+app/(app)/homeowner/call-visit-leads/page.tsx,file,Page for managing call/visit lead requests
+
+## Installer Section
+app/(app)/installer/,folder,Installer dashboard and related pages
+app/(app)/installer/layout.tsx,file,Installer-only layout; redirects homeowners away, ensures correct role
+app/(app)/installer/dashboard/page.tsx,file,Installer dashboard main view; loads the dashboard UI
+app/(app)/installer/leads/page.tsx,file,Installer's available leads feed
+app/(app)/installer/purchased/page.tsx,file,Installer's purchased leads management
+app/(app)/installer/insights/page.tsx,file,Installer analytics and insights
+
+# Marketing Section
+app/(marketing)/,folder,Public marketing and info pages
+app/(marketing)/layout.tsx,file,Marketing layout; wraps pages with header and footer
+app/(marketing)/page.tsx,file,Marketing homepage; intro and call-to-action
+app/(marketing)/login/page.tsx,file,Login form and authentication logic
+app/(marketing)/signup/page.tsx,file,Signup/registration form and logic
+app/(marketing)/news/page.tsx,file,Solar industry news and updates
+app/(marketing)/request-quote/page.tsx,file,Public quote request form for new users
+
+# Components Directory
+components/AccessControl.tsx,file,Handles auth state and redirects based on user role
+components/BlogSection.tsx,file,Displays blog posts on the landing/marketing page
+components/DatabaseStatus.tsx,file,Shows Supabase/database connection status
+components/DIYTips.tsx,file,Section for do-it-yourself solar tips
+components/Footer.tsx,file,Main site footer with links and newsletter
+components/GovernmentNewsSection.tsx,file,Section for government/industry news
+components/Header.tsx,file,Main header/navigation bar with auth and dashboard links
+components/HeroSection.tsx,file,Landing page hero section with main call-to-action
+components/HowItWorks.tsx,file,Explains the solar quote process
+components/InstantQuoteForm.tsx,file,Quick quote form for landing page
+components/NewQuoteForm.tsx,file,Form for submitting a new quote request
+components/Newsletter.tsx,file,Newsletter signup form
+components/NewsPage.tsx,file,Displays news articles
+components/NotificationBubble.tsx,file,Small notification/alert indicator
+components/QuoteOptionsModal.tsx,file,Modal for selecting quote options
+components/QuotePreview.tsx,file,Preview of a sample quote
+components/RebateCalculator.tsx,file,Calculates solar rebates (UI + logic)
+components/RebateCalculatorForm.tsx,file,Form for entering rebate calculation details
+components/RequestQuote.tsx,file,Standalone quote request form
+components/TopBar.tsx,file,Top navigation bar (used in dashboards)
+components/WhyChooseUs.tsx,file,Section explaining platform benefits
+
+# Authentication Components
+components/auth/,folder,Authentication-related components
+components/auth/AuthModal.tsx,file,Modal for homeowner login/signup
+components/auth/ProtectedRoute.tsx,file,Client-side route protection wrapper
+
+# Chat Components
+components/chat/,folder,Chat system components
+components/chat/ChatMessage.tsx,file,Renders a single chat message
+components/chat/ChatWindow.tsx,file,Main chat window UI
+components/chat/FloatingChat.tsx,file,Floating chat button/widget
+components/chat/FloatingChatButton.tsx,file,Button to open chat
+components/chat/QuickActions.tsx,file,Quick reply/action buttons for chat
+components/chat/TypingIndicator.tsx,file,Shows when someone is typing
+
+# Homeowner Components
+components/homeowner/,folder,Homeowner dashboard and related UI
+components/homeowner/BiddingRoom.tsx,file,Bidding room interface for homeowners
+components/homeowner/CallVisitLeads.tsx,file,Manages call/visit lead requests
+components/homeowner/ChatSection.tsx,file,Homeowner chat section
+components/homeowner/ChatWithInstaller.tsx,file,Direct chat with an installer
+components/homeowner/DashboardHome.tsx,file,Home view of the homeowner dashboard
+components/homeowner/DashboardOverview.tsx,file,Overview/stats for homeowner dashboard
+components/homeowner/HomeownerDashboard.tsx,file,Main container for homeowner dashboard tabs and navigation
+components/homeowner/MyQuoteRequests.tsx,file,List and manage homeowner's quote requests
+components/homeowner/NewQuoteForm.tsx,file,New quote request form (dashboard context)
+components/homeowner/Notifications.tsx,file,Homeowner notifications
+components/homeowner/QuoteUnlocks.tsx,file,Unlock premium quote features
+components/homeowner/SettingsSection.tsx,file,Homeowner account settings
+components/homeowner/WrittenQuotes.tsx,file,View written quotes received
+
+# Installer Components
+components/installer/,folder,Installer dashboard and related UI
+components/installer/BecomePartnerButton.tsx,file,Button to start installer registration
+components/installer/BiddingResponse.tsx,file,Installer's response in bidding room
+components/installer/ChatSection.tsx,file,Installer chat section
+components/installer/InstallerAuthModal.tsx,file,Modal for installer login/signup
+components/installer/InstallerDashboard.tsx,file,Main container for installer dashboard tabs and navigation
+components/installer/InstallerEligibilityForm.tsx,file,Form to check installer eligibility
+components/installer/InstallerSignIn.tsx,file,Installer login form
+components/installer/LeadFeed.tsx,file,Feed of available leads for installers
+components/installer/LeadInsights.tsx,file,Analytics and insights for installers
+components/installer/PurchasedLeads.tsx,file,List of purchased leads
+components/installer/QuoteSubmission.tsx,file,Form for submitting a quote to a homeowner
+
+# Profile Components
+components/profile/,folder,Profile management UI (user settings, avatar, etc.)
