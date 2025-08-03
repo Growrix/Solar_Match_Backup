@@ -1,0 +1,1257 @@
+# DATABASE SCHEMA IMPLEMENTATION - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** HIGH - EXECUTE AFTER SECURITY FIXES  
+**Dependencies:** CriticalSecurityFixes.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Implement missing core database tables and RLS policies to support full platform functionality
+**Estimated Time:** 2-3 days
+**Risk Level:** MEDIUM (Data structure changes)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Create comprehensive database schema with SQL migration files
+2. Implement Row Level Security (RLS) policies
+3. Set up database indexes for performance
+4. Create database functions and triggers
+5. Test database schema integrity
+
+---
+
+## 🗃️ CURRENT SCHEMA ANALYSIS
+
+**Existing Tables (29 migrations):**
+- ✅ `profiles` - Homeowner profiles
+- ✅ `installer_users` - Installer accounts  
+- ✅ `installer_companies` - Company information
+- ✅ `solar_quotes` - Quote requests
+- ✅ `user_addresses` - Property addresses
+- ✅ `newsletter_subscribers` - Email subscriptions
+- ✅ `blog_posts` - Content management
+
+**Missing Critical Tables:**
+- ❌ `messages` - Chat system persistence
+- ❌ `payments` - Payment transaction tracking
+- ❌ `bidding_rounds` - 3-round bidding system
+- ❌ `quote_versions` - Quote revision tracking
+- ❌ `lead_interactions` - User activity logging
+- ❌ `system_logs` - Admin monitoring
+
+---
+
+## 🔧 DEVELOPER EXECUTION STEPS
+
+### STEP 1: Create Messages Table for Chat System
+**DEVELOPER ACTION:** Create SQL migration file for chat system tables
+
+**File Path:** `supabase/migrations/20250804120000_create_messages_table.sql`
+**Command:** Create this file with the complete SQL implementation:
+
+```sql
+/*
+  # Create Messages Table for Chat System
+  
+  1. New Tables
+    - `chat_rooms` - Chat room management
+    - `messages` - Individual chat messages
+    - `message_read_status` - Read receipt tracking
+  
+  2. Security
+    - Enable RLS on all tables
+    - Chat participants can only see their own conversations
+    - Admins can moderate flagged chats
+*/
+
+-- Create chat_rooms table
+CREATE TABLE IF NOT EXISTS chat_rooms (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Participants
+  homeowner_id uuid REFERENCES profiles(id) ON DELETE CASCADE,
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE,
+  
+  -- Context
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE CASCADE,
+  lead_type text NOT NULL CHECK (lead_type IN ('call_visit', 'written')),
+  
+  -- Status
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'closed', 'suspended')),
+  unlocked_at timestamptz, -- When chat was unlocked via payment
+  
+  -- Moderation
+  flagged boolean DEFAULT false,
+  flagged_reason text,
+  flagged_by uuid REFERENCES profiles(id),
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create messages table
+CREATE TABLE IF NOT EXISTS messages (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Chat context
+  chat_room_id uuid REFERENCES chat_rooms(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Message details
+  sender_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  sender_type text NOT NULL CHECK (sender_type IN ('homeowner', 'installer', 'admin')),
+  
+  content text NOT NULL,
+  message_type text DEFAULT 'text' CHECK (message_type IN ('text', 'image', 'file', 'system')),
+  
+  -- Moderation
+  filtered boolean DEFAULT false,
+  original_content text, -- Store original if filtered
+  
+  -- Status
+  delivered boolean DEFAULT true,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create message read status table
+CREATE TABLE IF NOT EXISTS message_read_status (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  message_id uuid REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  
+  read_at timestamptz DEFAULT now(),
+  
+  UNIQUE(message_id, user_id)
+);
+
+-- Enable RLS
+ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_read_status ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for chat_rooms
+CREATE POLICY "Users can view their own chat rooms"
+  ON chat_rooms
+  FOR SELECT
+  TO authenticated
+  USING (
+    homeowner_id = auth.uid() OR 
+    installer_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "System can create chat rooms"
+  ON chat_rooms
+  FOR INSERT
+  TO authenticated
+  USING (true);
+
+-- RLS Policies for messages
+CREATE POLICY "Users can view messages in their chat rooms"
+  ON messages
+  FOR SELECT
+  TO authenticated
+  USING (
+    chat_room_id IN (
+      SELECT id FROM chat_rooms 
+      WHERE homeowner_id = auth.uid() OR installer_id = auth.uid()
+    ) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "Users can send messages in their chat rooms"
+  ON messages
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    chat_room_id IN (
+      SELECT id FROM chat_rooms 
+      WHERE homeowner_id = auth.uid() OR installer_id = auth.uid()
+    ) AND
+    sender_id = auth.uid()
+  );
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_homeowner ON chat_rooms(homeowner_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_installer ON chat_rooms(installer_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_quote ON chat_rooms(quote_id);
+CREATE INDEX IF NOT EXISTS idx_messages_chat_room ON messages(chat_room_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+
+-- Triggers for updated_at
+CREATE TRIGGER update_chat_rooms_updated_at 
+  BEFORE UPDATE ON chat_rooms 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_messages_updated_at 
+  BEFORE UPDATE ON messages 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+**VERIFICATION:** Run the migration:
+```bash
+# Navigate to project root
+cd "d:\Desktop Mass\SOLAR LEAD GEN PROJECT MAIN FILE\BOLT PROJECT\LAST DAY WITH THE BOLT\SolarMatch Next.js Project\project next js"
+
+# Run the migration
+npx supabase migration new create_messages_table
+npx supabase db push
+```
+
+**STOP & CONFIRM:** Verify tables are created in Supabase dashboard before proceeding.
+  
+  -- Status
+  delivered boolean DEFAULT true,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create message read status table
+CREATE TABLE IF NOT EXISTS message_read_status (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  message_id uuid REFERENCES messages(id) ON DELETE CASCADE NOT NULL,
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  
+  read_at timestamptz DEFAULT now(),
+  
+  UNIQUE(message_id, user_id)
+);
+
+-- Enable RLS
+ALTER TABLE chat_rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE message_read_status ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for chat_rooms
+CREATE POLICY "Users can view their own chat rooms"
+  ON chat_rooms
+  FOR SELECT
+  TO authenticated
+  USING (
+    homeowner_id = auth.uid() OR 
+    installer_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "System can create chat rooms"
+  ON chat_rooms
+  FOR INSERT
+  TO authenticated
+  USING (true);
+
+-- RLS Policies for messages
+CREATE POLICY "Users can view messages in their chat rooms"
+  ON messages
+  FOR SELECT
+  TO authenticated
+  USING (
+    chat_room_id IN (
+      SELECT id FROM chat_rooms 
+      WHERE homeowner_id = auth.uid() OR installer_id = auth.uid()
+    ) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "Users can send messages in their chat rooms"
+  ON messages
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (
+    chat_room_id IN (
+      SELECT id FROM chat_rooms 
+      WHERE homeowner_id = auth.uid() OR installer_id = auth.uid()
+    ) AND
+    sender_id = auth.uid()
+  );
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_homeowner ON chat_rooms(homeowner_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_installer ON chat_rooms(installer_id);
+CREATE INDEX IF NOT EXISTS idx_chat_rooms_quote ON chat_rooms(quote_id);
+CREATE INDEX IF NOT EXISTS idx_messages_chat_room ON messages(chat_room_id);
+CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(created_at);
+
+-- Triggers for updated_at
+CREATE TRIGGER update_chat_rooms_updated_at 
+  BEFORE UPDATE ON chat_rooms 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_messages_updated_at 
+  BEFORE UPDATE ON messages 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+---
+
+### STEP 2: Create Payments Table for Stripe Integration
+**DEVELOPER ACTION:** Create SQL migration file for payment system tables
+
+**File Path:** `supabase/migrations/20250804130000_create_payments_table.sql`
+**Command:** Create this file with the complete SQL implementation:
+
+```sql
+/*
+  # Create Payments Tables for Stripe Integration
+  
+  1. New Tables
+    - `payments` - All payment transactions
+    - `installer_wallets` - Installer credit system
+    - `wallet_transactions` - Wallet transaction history
+  
+  2. Security
+    - Enable RLS for user-specific access
+    - Admin-only access for payment management
+*/
+
+-- Create payments table
+CREATE TABLE IF NOT EXISTS payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- User context
+  user_id uuid REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE SET NULL,
+  
+  -- Stripe integration
+  stripe_payment_intent_id text UNIQUE,
+  stripe_customer_id text,
+  
+  -- Payment details
+  amount_cents integer NOT NULL CHECK (amount_cents > 0),
+  currency text DEFAULT 'AUD' CHECK (currency IN ('AUD', 'USD')),
+  
+  payment_type text NOT NULL CHECK (payment_type IN ('quote_request', 'lead_unlock', 'membership_fee', 'commission')),
+  payment_method text CHECK (payment_method IN ('card', 'bank_transfer', 'wallet')),
+  
+  -- Status tracking
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled', 'refunded')),
+  failure_reason text,
+  
+  -- Metadata
+  description text,
+  metadata jsonb DEFAULT '{}',
+  
+  -- Timestamps
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  processed_at timestamptz
+);
+
+-- Create installer wallets table
+CREATE TABLE IF NOT EXISTS installer_wallets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE NOT NULL UNIQUE,
+  
+  -- Balance tracking
+  balance_cents integer DEFAULT 0 CHECK (balance_cents >= 0),
+  currency text DEFAULT 'AUD',
+  
+  -- Payout details
+  stripe_account_id text, -- Stripe Connect account
+  payout_method text DEFAULT 'bank_transfer',
+  minimum_payout_cents integer DEFAULT 5000, -- $50 minimum
+  
+  -- Status
+  status text DEFAULT 'active' CHECK (status IN ('active', 'suspended', 'closed')),
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create wallet transactions table
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  wallet_id uuid REFERENCES installer_wallets(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Transaction details
+  amount_cents integer NOT NULL, -- Can be positive (credit) or negative (debit)
+  transaction_type text NOT NULL CHECK (transaction_type IN ('commission', 'payout', 'refund', 'adjustment', 'fee')),
+  
+  -- References
+  related_payment_id uuid REFERENCES payments(id) ON DELETE SET NULL,
+  related_quote_id uuid REFERENCES solar_quotes(id) ON DELETE SET NULL,
+  
+  -- Description
+  description text NOT NULL,
+  metadata jsonb DEFAULT '{}',
+  
+  -- Balance tracking
+  balance_before_cents integer NOT NULL,
+  balance_after_cents integer NOT NULL,
+  
+  created_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE installer_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for payments
+CREATE POLICY "Users can view their own payments"
+  ON payments
+  FOR SELECT
+  TO authenticated
+  USING (
+    user_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "System can create payments"
+  ON payments
+  FOR INSERT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "System can update payment status"
+  ON payments
+  FOR UPDATE
+  TO authenticated
+  USING (true);
+
+-- RLS Policies for installer_wallets
+CREATE POLICY "Installers can view their own wallet"
+  ON installer_wallets
+  FOR SELECT
+  TO authenticated
+  USING (
+    installer_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- RLS Policies for wallet_transactions
+CREATE POLICY "Users can view their wallet transactions"
+  ON wallet_transactions
+  FOR SELECT
+  TO authenticated
+  USING (
+    wallet_id IN (SELECT id FROM installer_wallets WHERE installer_id = auth.uid()) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_payments_user_id ON payments(user_id);
+CREATE INDEX IF NOT EXISTS idx_payments_quote_id ON payments(quote_id);
+CREATE INDEX IF NOT EXISTS idx_payments_stripe_intent ON payments(stripe_payment_intent_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_payments_created_at ON payments(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_installer_wallets_installer ON installer_wallets(installer_id);
+
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet ON wallet_transactions(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_payment ON wallet_transactions(related_payment_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_created_at ON wallet_transactions(created_at);
+
+-- Triggers for updated_at
+CREATE TRIGGER update_payments_updated_at 
+  BEFORE UPDATE ON payments 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_installer_wallets_updated_at 
+  BEFORE UPDATE ON installer_wallets 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+**VERIFICATION:** Run the migration:
+```bash
+npx supabase migration new create_payments_table
+npx supabase db push
+```
+
+**STOP & CONFIRM:** Verify payment tables are created and RLS policies are active before proceeding.
+
+-- Create payments table
+CREATE TABLE IF NOT EXISTS payments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Stripe integration
+  stripe_payment_intent_id text UNIQUE,
+  stripe_checkout_session_id text,
+  stripe_customer_id text,
+  
+  -- Transaction details
+  amount_cents integer NOT NULL,
+  currency text DEFAULT 'AUD' NOT NULL,
+  
+  -- Payment context
+  payment_type text NOT NULL CHECK (payment_type IN ('lead_unlock', 'deal_commission', 'wallet_topup')),
+  
+  -- Related entities
+  payer_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  recipient_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE SET NULL,
+  
+  -- Status tracking
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled', 'refunded')),
+  
+  -- Metadata
+  description text,
+  metadata jsonb DEFAULT '{}',
+  
+  -- Timestamps
+  paid_at timestamptz,
+  failed_at timestamptz,
+  refunded_at timestamptz,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Update existing installer_wallets table (if exists) or create
+CREATE TABLE IF NOT EXISTS installer_wallets (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE UNIQUE NOT NULL,
+  
+  -- Balance tracking
+  balance_cents integer DEFAULT 0 NOT NULL,
+  reserved_cents integer DEFAULT 0 NOT NULL, -- For pending transactions
+  
+  -- Limits and settings
+  auto_topup_enabled boolean DEFAULT false,
+  auto_topup_amount_cents integer DEFAULT 10000, -- $100 default
+  auto_topup_threshold_cents integer DEFAULT 2000, -- $20 threshold
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- Create wallet transactions table
+CREATE TABLE IF NOT EXISTS wallet_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  wallet_id uuid REFERENCES installer_wallets(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Transaction details
+  amount_cents integer NOT NULL, -- Positive for credits, negative for debits
+  transaction_type text NOT NULL CHECK (transaction_type IN ('topup', 'lead_purchase', 'refund', 'commission_fee')),
+  
+  -- Related records
+  payment_id uuid REFERENCES payments(id) ON DELETE SET NULL,
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE SET NULL,
+  
+  -- Balance tracking
+  balance_before_cents integer NOT NULL,
+  balance_after_cents integer NOT NULL,
+  
+  description text NOT NULL,
+  metadata jsonb DEFAULT '{}',
+  
+  created_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE installer_wallets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE wallet_transactions ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for payments
+CREATE POLICY "Users can view their own payments"
+  ON payments
+  FOR SELECT
+  TO authenticated
+  USING (
+    payer_id = auth.uid() OR 
+    recipient_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- RLS Policies for installer_wallets
+CREATE POLICY "Installers can view their own wallet"
+  ON installer_wallets
+  FOR SELECT
+  TO authenticated
+  USING (
+    installer_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "Installers can update their own wallet settings"
+  ON installer_wallets
+  FOR UPDATE
+  TO authenticated
+  USING (installer_id = auth.uid())
+  WITH CHECK (installer_id = auth.uid());
+
+-- RLS Policies for wallet_transactions
+CREATE POLICY "Installers can view their own wallet transactions"
+  ON wallet_transactions
+  FOR SELECT
+  TO authenticated
+  USING (
+    wallet_id IN (SELECT id FROM installer_wallets WHERE installer_id = auth.uid()) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_payments_stripe_intent ON payments(stripe_payment_intent_id);
+CREATE INDEX IF NOT EXISTS idx_payments_payer ON payments(payer_id);
+CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_wallet ON wallet_transactions(wallet_id);
+CREATE INDEX IF NOT EXISTS idx_wallet_transactions_created_at ON wallet_transactions(created_at);
+
+-- Triggers
+CREATE TRIGGER update_payments_updated_at 
+  BEFORE UPDATE ON payments 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_installer_wallets_updated_at 
+  BEFORE UPDATE ON installer_wallets 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+```
+
+### STEP 3: Create Bidding System Tables
+**Timeline:** Day 2 Morning
+**Migration File:** `supabase/migrations/20250804140000_create_bidding_tables.sql`
+
+```sql
+/*
+  # Create Bidding System Tables
+  
+  1. New Tables
+    - `bidding_rounds` - 3-round bidding management
+    - `bids` - Individual bids from installers
+    - `bid_history` - Audit trail of bid changes
+  
+  2. Features
+    - 3 rounds maximum with auto-extension
+    - Sealed bidding with reveal logic
+    - Winner selection and payment integration
+*/
+
+-- Create bidding rounds table
+CREATE TABLE IF NOT EXISTS bidding_rounds (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Quote context
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Round management
+  round_number integer NOT NULL CHECK (round_number BETWEEN 1 AND 3),
+  max_rounds integer DEFAULT 3 NOT NULL,
+  
+  -- Timing
+  start_time timestamptz NOT NULL DEFAULT now(),
+  end_time timestamptz NOT NULL,
+  extended_end_time timestamptz, -- For auto-extensions
+  
+  -- Status
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'extended', 'completed', 'cancelled')),
+  
+  -- Participation
+  min_participants integer DEFAULT 3,
+  current_participants integer DEFAULT 0,
+  
+  -- Results
+  winning_bid_id uuid REFERENCES bids(id),
+  winning_amount_cents integer,
+  
+  -- Extension logic
+  extension_minutes integer DEFAULT 30,
+  auto_extend_on_late_bid boolean DEFAULT true,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  
+  UNIQUE(quote_id, round_number)
+);
+
+-- Create bids table
+CREATE TABLE IF NOT EXISTS bids (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Bidding context
+  bidding_round_id uuid REFERENCES bidding_rounds(id) ON DELETE CASCADE NOT NULL,
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE CASCADE NOT NULL,
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Bid details
+  amount_cents integer NOT NULL,
+  system_size_kw numeric(4,1) NOT NULL,
+  warranty_years integer DEFAULT 10,
+  
+  -- Proposal details
+  proposal_text text,
+  installation_timeline_days integer,
+  includes_battery boolean DEFAULT false,
+  battery_size_kwh numeric(4,1),
+  
+  -- Status
+  status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'withdrawn', 'selected', 'rejected')),
+  is_winner boolean DEFAULT false,
+  
+  -- Timestamps
+  submitted_at timestamptz DEFAULT now(),
+  revealed_at timestamptz, -- When bid becomes visible to homeowner
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  
+  UNIQUE(bidding_round_id, installer_id)
+);
+
+-- Create bid history table for audit trail
+CREATE TABLE IF NOT EXISTS bid_history (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  bid_id uuid REFERENCES bids(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Change tracking
+  action text NOT NULL CHECK (action IN ('created', 'updated', 'withdrawn', 'selected', 'rejected')),
+  
+  -- Previous values (JSON for flexibility)
+  previous_values jsonb,
+  new_values jsonb,
+  
+  -- Context
+  changed_by uuid REFERENCES auth.users(id),
+  change_reason text,
+  
+  created_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE bidding_rounds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
+ALTER TABLE bid_history ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for bidding_rounds
+CREATE POLICY "Users can view bidding rounds for their quotes"
+  ON bidding_rounds
+  FOR SELECT
+  TO authenticated
+  USING (
+    quote_id IN (SELECT id FROM solar_quotes WHERE user_id = auth.uid()) OR
+    quote_id IN (
+      SELECT id FROM solar_quotes sq 
+      JOIN bids b ON b.quote_id = sq.id 
+      WHERE b.installer_id = auth.uid()
+    ) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- RLS Policies for bids
+CREATE POLICY "Installers can view their own bids"
+  ON bids
+  FOR SELECT
+  TO authenticated
+  USING (
+    installer_id = auth.uid() OR
+    quote_id IN (SELECT id FROM solar_quotes WHERE user_id = auth.uid()) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+CREATE POLICY "Installers can insert their own bids"
+  ON bids
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (installer_id = auth.uid());
+
+CREATE POLICY "Installers can update their own bids before deadline"
+  ON bids
+  FOR UPDATE
+  TO authenticated
+  USING (installer_id = auth.uid())
+  WITH CHECK (installer_id = auth.uid());
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_bidding_rounds_quote ON bidding_rounds(quote_id);
+CREATE INDEX IF NOT EXISTS idx_bidding_rounds_status ON bidding_rounds(status);
+CREATE INDEX IF NOT EXISTS idx_bids_round ON bids(bidding_round_id);
+CREATE INDEX IF NOT EXISTS idx_bids_installer ON bids(installer_id);
+CREATE INDEX IF NOT EXISTS idx_bids_quote ON bids(quote_id);
+CREATE INDEX IF NOT EXISTS idx_bid_history_bid ON bid_history(bid_id);
+
+-- Triggers
+CREATE TRIGGER update_bidding_rounds_updated_at 
+  BEFORE UPDATE ON bidding_rounds 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_bids_updated_at 
+  BEFORE UPDATE ON bids 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Function to auto-extend bidding rounds
+CREATE OR REPLACE FUNCTION extend_bidding_round()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- If a bid is submitted in the last 30 minutes, extend the round
+  IF NEW.submitted_at > OLD.submitted_at AND 
+     EXISTS (
+       SELECT 1 FROM bidding_rounds br 
+       WHERE br.id = NEW.bidding_round_id 
+       AND br.end_time - INTERVAL '30 minutes' <= NEW.submitted_at
+       AND br.auto_extend_on_late_bid = true
+       AND br.status = 'active'
+     ) THEN
+    
+    UPDATE bidding_rounds 
+    SET 
+      extended_end_time = GREATEST(extended_end_time, end_time + INTERVAL '30 minutes'),
+      status = 'extended',
+      updated_at = now()
+    WHERE id = NEW.bidding_round_id;
+    
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for auto-extension
+CREATE TRIGGER bid_submitted_extension
+  AFTER UPDATE ON bids
+  FOR EACH ROW
+  EXECUTE FUNCTION extend_bidding_round();
+```
+
+### STEP 4: Create Quote Versioning System
+**Timeline:** Day 2 Afternoon
+**Migration File:** `supabase/migrations/20250804150000_create_quote_versions_table.sql`
+
+```sql
+/*
+  # Create Quote Versioning System
+  
+  1. New Tables
+    - `quote_versions` - Track all quote revisions
+    - `quote_negotiations` - Negotiation context
+  
+  2. Features
+    - Full revision history
+    - Installer can revert to previous versions
+    - Homeowner can compare versions
+*/
+
+-- Create quote versions table
+CREATE TABLE IF NOT EXISTS quote_versions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Quote context
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE CASCADE NOT NULL,
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Version tracking
+  version_number integer NOT NULL,
+  is_current boolean DEFAULT false,
+  is_final boolean DEFAULT false,
+  
+  -- Quote details (denormalized for history)
+  system_size_kw numeric(4,1) NOT NULL,
+  total_cost_cents integer NOT NULL,
+  panel_brand text,
+  panel_model text,
+  inverter_brand text,
+  inverter_model text,
+  warranty_years integer DEFAULT 10,
+  
+  -- Installation details
+  installation_timeline_days integer,
+  includes_battery boolean DEFAULT false,
+  battery_brand text,
+  battery_model text,
+  battery_capacity_kwh numeric(4,1),
+  
+  -- Pricing breakdown
+  equipment_cost_cents integer,
+  installation_cost_cents integer,
+  additional_costs_cents integer DEFAULT 0,
+  
+  -- Terms and conditions
+  terms_text text,
+  proposal_notes text,
+  
+  -- Version metadata
+  change_summary text, -- What changed in this version
+  change_reason text,  -- Why it was changed
+  reverted_from_version integer, -- If this is a revert
+  
+  -- Status
+  status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'submitted', 'viewed', 'accepted', 'rejected')),
+  
+  -- Timestamps
+  submitted_at timestamptz,
+  viewed_at timestamptz,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  
+  UNIQUE(quote_id, installer_id, version_number)
+);
+
+-- Create quote negotiations table
+CREATE TABLE IF NOT EXISTS quote_negotiations (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Context
+  quote_id uuid REFERENCES solar_quotes(id) ON DELETE CASCADE NOT NULL,
+  installer_id uuid REFERENCES installer_users(id) ON DELETE CASCADE NOT NULL,
+  
+  -- Negotiation status
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'cancelled')),
+  
+  -- Current version
+  current_version_id uuid REFERENCES quote_versions(id),
+  final_version_id uuid REFERENCES quote_versions(id),
+  
+  -- Negotiation limits
+  max_revisions integer DEFAULT 5,
+  current_revisions integer DEFAULT 0,
+  
+  -- Timeline
+  negotiation_deadline timestamptz,
+  
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  
+  UNIQUE(quote_id, installer_id)
+);
+
+-- Enable RLS
+ALTER TABLE quote_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quote_negotiations ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for quote_versions
+CREATE POLICY "Installers can manage their own quote versions"
+  ON quote_versions
+  FOR ALL
+  TO authenticated
+  USING (
+    installer_id = auth.uid() OR
+    quote_id IN (SELECT id FROM solar_quotes WHERE user_id = auth.uid()) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  )
+  WITH CHECK (
+    installer_id = auth.uid() OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- RLS Policies for quote_negotiations
+CREATE POLICY "Participants can view their negotiations"
+  ON quote_negotiations
+  FOR SELECT
+  TO authenticated
+  USING (
+    installer_id = auth.uid() OR
+    quote_id IN (SELECT id FROM solar_quotes WHERE user_id = auth.uid()) OR
+    auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%')
+  );
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_quote_versions_quote ON quote_versions(quote_id);
+CREATE INDEX IF NOT EXISTS idx_quote_versions_installer ON quote_versions(installer_id);
+CREATE INDEX IF NOT EXISTS idx_quote_versions_current ON quote_versions(is_current) WHERE is_current = true;
+CREATE INDEX IF NOT EXISTS idx_quote_negotiations_quote ON quote_negotiations(quote_id);
+
+-- Triggers
+CREATE TRIGGER update_quote_versions_updated_at 
+  BEFORE UPDATE ON quote_versions 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_quote_negotiations_updated_at 
+  BEFORE UPDATE ON quote_negotiations 
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Function to manage version numbering
+CREATE OR REPLACE FUNCTION increment_quote_version()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Set version number if not provided
+  IF NEW.version_number IS NULL THEN
+    SELECT COALESCE(MAX(version_number), 0) + 1 
+    INTO NEW.version_number
+    FROM quote_versions 
+    WHERE quote_id = NEW.quote_id AND installer_id = NEW.installer_id;
+  END IF;
+  
+  -- Mark previous versions as not current
+  IF NEW.is_current = true THEN
+    UPDATE quote_versions 
+    SET is_current = false, updated_at = now()
+    WHERE quote_id = NEW.quote_id 
+    AND installer_id = NEW.installer_id 
+    AND id != NEW.id;
+  END IF;
+  
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Trigger for version management
+CREATE TRIGGER manage_quote_versions
+  BEFORE INSERT OR UPDATE ON quote_versions
+  FOR EACH ROW
+  EXECUTE FUNCTION increment_quote_version();
+```
+
+### STEP 5: Create System Logs Table
+**Timeline:** Day 3 Morning
+**Migration File:** `supabase/migrations/20250804160000_create_system_logs_table.sql`
+
+```sql
+/*
+  # Create System Logs for Admin Monitoring
+  
+  1. New Tables
+    - `system_logs` - Comprehensive event logging
+    - `log_categories` - Log categorization
+  
+  2. Features
+    - Comprehensive audit trail
+    - Admin filtering and search
+    - Automated log cleanup
+*/
+
+-- Create log categories table
+CREATE TABLE IF NOT EXISTS log_categories (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  name text UNIQUE NOT NULL,
+  description text,
+  severity text NOT NULL DEFAULT 'info' CHECK (severity IN ('debug', 'info', 'warning', 'error', 'critical')),
+  retention_days integer DEFAULT 90,
+  
+  created_at timestamptz DEFAULT now()
+);
+
+-- Insert default categories
+INSERT INTO log_categories (name, description, severity, retention_days) VALUES
+('auth', 'Authentication events', 'info', 180),
+('quote', 'Quote submission and updates', 'info', 365),
+('payment', 'Payment transactions', 'warning', 2555), -- 7 years for financial records
+('chat', 'Chat messages and moderation', 'info', 90),
+('bidding', 'Bidding round activities', 'info', 365),
+('admin', 'Admin panel actions', 'warning', 730),
+('system', 'System-level events', 'error', 365),
+('security', 'Security-related events', 'critical', 2555);
+
+-- Create system logs table
+CREATE TABLE IF NOT EXISTS system_logs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- Event classification
+  category_id uuid REFERENCES log_categories(id) NOT NULL,
+  event_type text NOT NULL, -- e.g., 'user_login', 'quote_submitted', 'payment_processed'
+  severity text NOT NULL DEFAULT 'info' CHECK (severity IN ('debug', 'info', 'warning', 'error', 'critical')),
+  
+  -- Context
+  user_id uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  session_id text,
+  ip_address inet,
+  user_agent text,
+  
+  -- Event details
+  message text NOT NULL,
+  details jsonb DEFAULT '{}',
+  
+  -- Related entities
+  related_quote_id uuid REFERENCES solar_quotes(id) ON DELETE SET NULL,
+  related_payment_id uuid REFERENCES payments(id) ON DELETE SET NULL,
+  related_chat_id uuid,
+  
+  -- Error details (if applicable)
+  error_code text,
+  stack_trace text,
+  
+  -- Admin actions
+  flagged boolean DEFAULT false,
+  flagged_by uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  flagged_reason text,
+  admin_notes text,
+  
+  -- Timestamps
+  occurred_at timestamptz DEFAULT now(),
+  created_at timestamptz DEFAULT now()
+);
+
+-- Enable RLS
+ALTER TABLE log_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies - Admin only access
+CREATE POLICY "Admins can view all log categories"
+  ON log_categories
+  FOR SELECT
+  TO authenticated
+  USING (auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%'));
+
+CREATE POLICY "Admins can manage system logs"
+  ON system_logs
+  FOR ALL
+  TO authenticated
+  USING (auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%'))
+  WITH CHECK (auth.uid() IN (SELECT id FROM profiles WHERE email LIKE '%@admin.%'));
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category_id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_event_type ON system_logs(event_type);
+CREATE INDEX IF NOT EXISTS idx_system_logs_severity ON system_logs(severity);
+CREATE INDEX IF NOT EXISTS idx_system_logs_user ON system_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_system_logs_occurred_at ON system_logs(occurred_at);
+CREATE INDEX IF NOT EXISTS idx_system_logs_flagged ON system_logs(flagged) WHERE flagged = true;
+
+-- Function to log events
+CREATE OR REPLACE FUNCTION log_event(
+  p_category text,
+  p_event_type text,
+  p_message text,
+  p_severity text DEFAULT 'info',
+  p_user_id uuid DEFAULT auth.uid(),
+  p_details jsonb DEFAULT '{}'
+) RETURNS uuid AS $$
+DECLARE
+  log_id uuid;
+  category_id uuid;
+BEGIN
+  -- Get category ID
+  SELECT id INTO category_id FROM log_categories WHERE name = p_category;
+  
+  -- If category doesn't exist, create it
+  IF category_id IS NULL THEN
+    INSERT INTO log_categories (name, severity) 
+    VALUES (p_category, p_severity) 
+    RETURNING id INTO category_id;
+  END IF;
+  
+  -- Insert log entry
+  INSERT INTO system_logs (
+    category_id,
+    event_type,
+    message,
+    severity,
+    user_id,
+    details
+  ) VALUES (
+    category_id,
+    p_event_type,
+    p_message,
+    p_severity,
+    p_user_id,
+    p_details
+  ) RETURNING id INTO log_id;
+  
+  RETURN log_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to clean up old logs
+CREATE OR REPLACE FUNCTION cleanup_old_logs() RETURNS void AS $$
+BEGIN
+  DELETE FROM system_logs sl
+  USING log_categories lc
+  WHERE sl.category_id = lc.id
+  AND sl.created_at < (now() - (lc.retention_days || ' days')::interval);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create a scheduled job to run cleanup (if pg_cron is available)
+-- SELECT cron.schedule('cleanup-logs', '0 2 * * *', 'SELECT cleanup_old_logs();');
+```
+
+### STEP 6: Update Database Types
+**Timeline:** Day 3 Afternoon
+**Files to Update:**
+```
+types/database.types.ts
+```
+
+**Generate new types:**
+```bash
+# Run Supabase type generation
+npx supabase gen types typescript --project-id YOUR_PROJECT_ID > types/database.types.ts
+```
+
+**Add manual type exports:**
+```typescript
+// Add to types/database.types.ts
+
+// Chat System Types
+export type ChatRoom = Database['public']['Tables']['chat_rooms']['Row']
+export type Message = Database['public']['Tables']['messages']['Row']
+export type MessageReadStatus = Database['public']['Tables']['message_read_status']['Row']
+
+// Payments Types
+export type Payment = Database['public']['Tables']['payments']['Row']
+export type InstallerWallet = Database['public']['Tables']['installer_wallets']['Row']
+export type WalletTransaction = Database['public']['Tables']['wallet_transactions']['Row']
+
+// Bidding System Types
+export type BiddingRound = Database['public']['Tables']['bidding_rounds']['Row']
+export type Bid = Database['public']['Tables']['bids']['Row']
+export type BidHistory = Database['public']['Tables']['bid_history']['Row']
+
+// Quote Versioning Types
+export type QuoteVersion = Database['public']['Tables']['quote_versions']['Row']
+export type QuoteNegotiation = Database['public']['Tables']['quote_negotiations']['Row']
+
+// System Logs Types
+export type SystemLog = Database['public']['Tables']['system_logs']['Row']
+export type LogCategory = Database['public']['Tables']['log_categories']['Row']
+
+// Insert and Update types
+export type InsertChatRoom = Database['public']['Tables']['chat_rooms']['Insert']
+export type InsertMessage = Database['public']['Tables']['messages']['Insert']
+export type InsertPayment = Database['public']['Tables']['payments']['Insert']
+export type InsertBid = Database['public']['Tables']['bids']['Insert']
+export type InsertQuoteVersion = Database['public']['Tables']['quote_versions']['Insert']
+export type InsertSystemLog = Database['public']['Tables']['system_logs']['Insert']
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Database Structure:
+- [ ] All tables created successfully
+- [ ] RLS policies implemented and tested
+- [ ] Indexes created for performance
+- [ ] Triggers and functions working
+- [ ] Foreign key constraints validated
+
+### Data Integrity:
+- [ ] Test data insertion and retrieval
+- [ ] RLS policies prevent unauthorized access
+- [ ] Triggers properly update timestamps
+- [ ] Cascading deletes work correctly
+
+### Performance:
+- [ ] Query performance tests completed
+- [ ] Indexes optimized for common queries
+- [ ] Connection pooling configured
+
+---
+
+## 🔄 MIGRATION TESTING
+
+### Test Commands:
+```sql
+-- Test chat room creation
+SELECT log_event('chat', 'room_created', 'Chat room created for quote', 'info');
+
+-- Test payment insertion
+INSERT INTO payments (amount_cents, payment_type, payer_id, status)
+VALUES (5000, 'lead_unlock', auth.uid(), 'succeeded');
+
+-- Test bidding round
+INSERT INTO bidding_rounds (quote_id, round_number, end_time)
+VALUES ('sample-quote-id', 1, now() + interval '24 hours');
+
+-- Test quote versioning
+INSERT INTO quote_versions (quote_id, installer_id, version_number, system_size_kw, total_cost_cents)
+VALUES ('sample-quote-id', auth.uid(), 1, 6.6, 1200000);
+```
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Run all migrations in order
+2. Test data integrity and RLS policies
+3. Update frontend services to use new tables
+4. Proceed to Stripe Payment Integration phase

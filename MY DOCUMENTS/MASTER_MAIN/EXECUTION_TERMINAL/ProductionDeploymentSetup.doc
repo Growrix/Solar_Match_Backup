@@ -1,0 +1,1336 @@
+# PRODUCTION DEPLOYMENT SETUP - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** CRITICAL - EXECUTE AFTER ADMIN PANEL  
+**Dependencies:** AdminPanelDevelopment.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Complete production deployment configuration with CI/CD, monitoring, and scaling
+**Estimated Time:** 2-3 days
+**Risk Level:** HIGH (Production deployment complexity and critical infrastructure)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Configure production environment settings
+2. Set up CI/CD pipeline with GitHub Actions
+3. Deploy to Vercel with optimized configuration
+4. Implement monitoring and error tracking
+5. Test production deployment and performance
+
+---
+
+## 🎯 PRODUCTION DEPLOYMENT REQUIREMENTS
+
+**Current State Analysis:**
+- Next.js 15 application with App Router ready for deployment
+- Supabase backend configured for production
+- Stripe payment integration ready
+- No CI/CD pipeline configured
+- No production monitoring setup
+- No environment configuration management
+
+**Production Features Needed:**
+- ✅ Vercel deployment configuration optimized
+- ✅ Environment variables management
+- ✅ CI/CD pipeline with GitHub Actions
+- ✅ Database migrations automation
+- ✅ Performance monitoring and analytics
+- ✅ Error tracking and logging
+- ✅ SEO optimization and meta tags
+- ✅ Security headers and CSP
+- ✅ Caching strategies
+- ✅ CDN configuration
+
+---
+
+## 🔧 EXECUTION STEPS
+
+### STEP 1: Production Configuration Files
+**Timeline:** Day 1 Morning
+**Files:** Root configuration files
+
+```javascript
+// next.config.mjs (Enhanced for Production)
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  // Enable App Router
+  experimental: {
+    appDir: true,
+  },
+
+  // Performance optimizations
+  images: {
+    domains: [
+      'avatars.githubusercontent.com',
+      'lh3.googleusercontent.com',
+      'supabase.co',
+      'your-supabase-url.supabase.co',
+    ],
+    formats: ['image/avif', 'image/webp'],
+    minimumCacheTTL: 60,
+  },
+
+  // Compression
+  compress: true,
+
+  // Security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin',
+          },
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=()',
+          },
+          // CSP for production
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://js.stripe.com https://www.googletagmanager.com",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              "img-src 'self' data: https: blob:",
+              "connect-src 'self' https://*.supabase.co https://api.stripe.com https://api.deepseek.com wss://*.supabase.co",
+              "frame-src 'self' https://js.stripe.com",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "frame-ancestors 'none'",
+            ].join('; '),
+          },
+        ],
+      },
+    ]
+  },
+
+  // Rewrites for API routes
+  async rewrites() {
+    return [
+      {
+        source: '/api/stripe/webhook',
+        destination: '/api/stripe/webhook',
+      },
+    ]
+  },
+
+  // Environment variables validation
+  env: {
+    CUSTOM_KEY: process.env.CUSTOM_KEY,
+  },
+
+  // Bundle analysis
+  webpack: (config, { buildId, dev, isServer, defaultLoaders, webpack }) => {
+    // Add custom webpack config for production
+    if (!dev && !isServer) {
+      config.optimization.splitChunks.chunks = 'all'
+      config.optimization.splitChunks.cacheGroups = {
+        ...config.optimization.splitChunks.cacheGroups,
+        vendor: {
+          test: /[\\/]node_modules[\\/]/,
+          name: 'vendors',
+          priority: 10,
+          chunks: 'all',
+        },
+      }
+    }
+
+    return config
+  },
+
+  // Static generation settings
+  output: 'standalone',
+  
+  // Experimental features for performance
+  experimental: {
+    optimizeCss: true,
+    gzipSize: true,
+  },
+}
+
+export default nextConfig
+```
+
+```json
+// vercel.json (Vercel Deployment Configuration)
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["syd1", "sin1"],
+  "functions": {
+    "app/api/**/*.ts": {
+      "maxDuration": 30
+    },
+    "app/api/stripe/webhook.ts": {
+      "maxDuration": 10
+    },
+    "app/api/ai/**/*.ts": {
+      "maxDuration": 60
+    }
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://your-domain.com"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "Content-Type, Authorization"
+        }
+      ]
+    }
+  ],
+  "redirects": [
+    {
+      "source": "/admin",
+      "destination": "/admin/dashboard",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/sitemap.xml",
+      "destination": "/api/sitemap"
+    },
+    {
+      "source": "/robots.txt",
+      "destination": "/api/robots"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/analytics",
+      "schedule": "0 1 * * *"
+    }
+  ]
+}
+```
+
+```yaml
+# .github/workflows/deploy.yml (CI/CD Pipeline)
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run type checking
+        run: npm run type-check
+
+      - name: Run linting
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Build application
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+  deploy-staging:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Project Artifacts to Vercel
+        id: deploy
+        run: |
+          echo "url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})" >> $GITHUB_OUTPUT
+
+      - name: Comment PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 Staging deployment ready! Preview: ${{ steps.deploy.outputs.url }}'
+            })
+
+  deploy-production:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel Environment Information
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build Project Artifacts
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Project Artifacts to Vercel
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Run database migrations
+        run: |
+          curl -X POST "${{ secrets.SUPABASE_URL }}/rest/v1/rpc/run_migrations" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
+            -H "Content-Type: application/json"
+
+      - name: Warm up application
+        run: |
+          curl -f https://your-domain.com/api/health || exit 1
+          curl -f https://your-domain.com/ || exit 1
+
+  security-scan:
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Run security headers check
+        run: |
+          curl -I https://your-domain.com | grep -E "(X-Frame-Options|Content-Security-Policy|X-Content-Type-Options)"
+
+      - name: Test SSL certificate
+        run: |
+          curl -vI https://your-domain.com 2>&1 | grep -E "(SSL certificate|TLS)"
+```
+
+### STEP 2: Environment Configuration Management
+**Timeline:** Day 1 Afternoon
+**Files:** Environment and configuration files
+
+```bash
+# .env.example (Template for environment variables)
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Stripe Configuration
+STRIPE_SECRET_KEY=sk_live_your-secret-key
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_your-publishable-key
+STRIPE_WEBHOOK_SECRET=whsec_your-webhook-secret
+
+# AI Configuration
+DEEPSEEK_API_KEY=your-deepseek-api-key
+
+# Application Configuration
+NEXT_PUBLIC_APP_URL=https://your-domain.com
+NEXTAUTH_URL=https://your-domain.com
+NEXTAUTH_SECRET=your-nextauth-secret
+
+# Analytics and Monitoring
+NEXT_PUBLIC_GA_MEASUREMENT_ID=G-XXXXXXXXXX
+SENTRY_DSN=your-sentry-dsn
+UPTIME_ROBOT_API_KEY=your-uptime-robot-key
+
+# Email Configuration (Optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+
+# Feature Flags
+NEXT_PUBLIC_ENABLE_ANALYTICS=true
+NEXT_PUBLIC_ENABLE_CHAT=true
+NEXT_PUBLIC_ENABLE_BIDDING=true
+
+# Rate Limiting
+UPSTASH_REDIS_REST_URL=your-upstash-url
+UPSTASH_REDIS_REST_TOKEN=your-upstash-token
+```
+
+```typescript
+// lib/config.ts (Environment Configuration Management)
+const requiredEnvVars = {
+  // Public variables (client-side accessible)
+  public: {
+    NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY,
+    NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  },
+  
+  // Private variables (server-side only)
+  private: {
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+    STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
+    STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+  },
+  
+  // Optional variables
+  optional: {
+    NEXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+    SENTRY_DSN: process.env.SENTRY_DSN,
+    SMTP_HOST: process.env.SMTP_HOST,
+    UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+  }
+}
+
+// Validate required environment variables
+function validateEnv() {
+  const missing: string[] = []
+  
+  // Check public variables
+  Object.entries(requiredEnvVars.public).forEach(([key, value]) => {
+    if (!value) missing.push(key)
+  })
+  
+  // Check private variables (only on server)
+  if (typeof window === 'undefined') {
+    Object.entries(requiredEnvVars.private).forEach(([key, value]) => {
+      if (!value) missing.push(key)
+    })
+  }
+  
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
+  }
+}
+
+// Run validation
+if (process.env.NODE_ENV !== 'test') {
+  validateEnv()
+}
+
+// Export configuration object
+export const config = {
+  app: {
+    name: 'SolarMatch',
+    url: requiredEnvVars.public.NEXT_PUBLIC_APP_URL!,
+    env: process.env.NODE_ENV || 'development',
+    version: process.env.npm_package_version || '1.0.0',
+  },
+  
+  supabase: {
+    url: requiredEnvVars.public.NEXT_PUBLIC_SUPABASE_URL!,
+    anonKey: requiredEnvVars.public.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    serviceRoleKey: requiredEnvVars.private.SUPABASE_SERVICE_ROLE_KEY!,
+  },
+  
+  stripe: {
+    publishableKey: requiredEnvVars.public.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!,
+    secretKey: requiredEnvVars.private.STRIPE_SECRET_KEY!,
+    webhookSecret: requiredEnvVars.private.STRIPE_WEBHOOK_SECRET!,
+  },
+  
+  ai: {
+    deepseekApiKey: requiredEnvVars.private.DEEPSEEK_API_KEY!,
+  },
+  
+  analytics: {
+    gaId: requiredEnvVars.optional.NEXT_PUBLIC_GA_MEASUREMENT_ID,
+  },
+  
+  monitoring: {
+    sentryDsn: requiredEnvVars.optional.SENTRY_DSN,
+  },
+  
+  features: {
+    enableAnalytics: process.env.NEXT_PUBLIC_ENABLE_ANALYTICS === 'true',
+    enableChat: process.env.NEXT_PUBLIC_ENABLE_CHAT === 'true',
+    enableBidding: process.env.NEXT_PUBLIC_ENABLE_BIDDING === 'true',
+  },
+}
+
+export default config
+```
+
+### STEP 3: Monitoring and Analytics Setup
+**Timeline:** Day 1 Evening to Day 2 Morning
+**Files:** Monitoring infrastructure
+
+```typescript
+// lib/monitoring/sentry.ts (Error Tracking Setup)
+import * as Sentry from '@sentry/nextjs'
+import { config } from '@/lib/config'
+
+if (config.monitoring.sentryDsn) {
+  Sentry.init({
+    dsn: config.monitoring.sentryDsn,
+    environment: config.app.env,
+    release: config.app.version,
+    
+    // Performance monitoring
+    tracesSampleRate: config.app.env === 'production' ? 0.1 : 1.0,
+    
+    // Session replay
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+    
+    // Error filtering
+    beforeSend(event, hint) {
+      // Filter out known non-critical errors
+      if (event.exception) {
+        const error = hint.originalException
+        
+        // Ignore cancelled requests
+        if (error?.name === 'AbortError') {
+          return null
+        }
+        
+        // Ignore network errors in development
+        if (config.app.env === 'development' && 
+            event.exception.values?.[0]?.type === 'NetworkError') {
+          return null
+        }
+      }
+      
+      return event
+    },
+    
+    // Custom tags
+    initialScope: {
+      tags: {
+        component: 'nextjs',
+      },
+      user: {
+        id: 'anonymous',
+      },
+    },
+  })
+}
+
+export { Sentry }
+```
+
+```typescript
+// lib/monitoring/analytics.ts (Analytics Setup)
+import { config } from '@/lib/config'
+
+declare global {
+  interface Window {
+    gtag: (command: string, targetId: string, config?: any) => void
+  }
+}
+
+class Analytics {
+  private isInitialized = false
+
+  init() {
+    if (!config.analytics.gaId || this.isInitialized || typeof window === 'undefined') {
+      return
+    }
+
+    // Load Google Analytics
+    const script = document.createElement('script')
+    script.src = `https://www.googletagmanager.com/gtag/js?id=${config.analytics.gaId}`
+    script.async = true
+    document.head.appendChild(script)
+
+    script.onload = () => {
+      window.gtag = window.gtag || function() {
+        (window.gtag as any).dataLayer = (window.gtag as any).dataLayer || []
+        ;(window.gtag as any).dataLayer.push(arguments)
+      }
+
+      window.gtag('js', new Date())
+      window.gtag('config', config.analytics.gaId!, {
+        page_title: document.title,
+        page_location: window.location.href,
+      })
+
+      this.isInitialized = true
+    }
+  }
+
+  trackEvent(action: string, category: string, label?: string, value?: number) {
+    if (!this.isInitialized || !window.gtag) return
+
+    window.gtag('event', action, {
+      event_category: category,
+      event_label: label,
+      value: value,
+    })
+  }
+
+  trackPageView(url: string, title: string) {
+    if (!this.isInitialized || !window.gtag) return
+
+    window.gtag('config', config.analytics.gaId!, {
+      page_title: title,
+      page_location: url,
+    })
+  }
+
+  trackConversion(eventName: string, value?: number, currency = 'AUD') {
+    if (!this.isInitialized || !window.gtag) return
+
+    window.gtag('event', eventName, {
+      currency: currency,
+      value: value,
+    })
+  }
+
+  trackUserSignup(method: string) {
+    this.trackEvent('sign_up', 'engagement', method)
+  }
+
+  trackQuoteCreated(systemSize: number, value: number) {
+    this.trackEvent('quote_created', 'solar', `${systemSize}kW`, value)
+    this.trackConversion('generate_lead', value)
+  }
+
+  trackPayment(amount: number, type: string) {
+    this.trackEvent('payment', 'revenue', type, amount)
+    this.trackConversion('purchase', amount)
+  }
+}
+
+export const analytics = new Analytics()
+
+// Auto-initialize in browser
+if (typeof window !== 'undefined') {
+  analytics.init()
+}
+```
+
+```typescript
+// lib/monitoring/performance.ts (Performance Monitoring)
+export class PerformanceMonitor {
+  private metrics: Map<string, number> = new Map()
+
+  startTiming(name: string) {
+    this.metrics.set(`${name}_start`, performance.now())
+  }
+
+  endTiming(name: string) {
+    const startTime = this.metrics.get(`${name}_start`)
+    if (startTime) {
+      const duration = performance.now() - startTime
+      this.metrics.set(name, duration)
+      
+      // Send to analytics
+      if (typeof window !== 'undefined' && window.gtag) {
+        window.gtag('event', 'timing_complete', {
+          name: name,
+          value: Math.round(duration),
+        })
+      }
+      
+      return duration
+    }
+    return 0
+  }
+
+  measureWebVitals() {
+    if (typeof window === 'undefined') return
+
+    // Core Web Vitals measurement
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        const { name, value } = entry as any
+        
+        // Send to analytics
+        if (window.gtag) {
+          window.gtag('event', 'web_vital', {
+            name,
+            value: Math.round(value),
+            custom_parameter_1: 'core_web_vitals',
+          })
+        }
+        
+        // Log to console in development
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`Web Vital: ${name}`, value)
+        }
+      }
+    })
+
+    try {
+      observer.observe({ entryTypes: ['paint', 'navigation', 'measure'] })
+    } catch (error) {
+      console.warn('Performance Observer not supported')
+    }
+  }
+
+  reportError(error: Error, context?: any) {
+    // Report to Sentry
+    if (typeof window !== 'undefined' && (window as any).Sentry) {
+      ;(window as any).Sentry.captureException(error, {
+        contexts: {
+          custom: context,
+        },
+      })
+    }
+
+    // Report to analytics
+    if (typeof window !== 'undefined' && window.gtag) {
+      window.gtag('event', 'exception', {
+        description: error.message,
+        fatal: false,
+      })
+    }
+  }
+}
+
+export const performanceMonitor = new PerformanceMonitor()
+
+// Auto-initialize web vitals measurement
+if (typeof window !== 'undefined') {
+  performanceMonitor.measureWebVitals()
+}
+```
+
+### STEP 4: SEO and Meta Tags Optimization
+**Timeline:** Day 2 Afternoon
+**Files:** SEO infrastructure
+
+```typescript
+// lib/seo/metadata.ts (SEO Metadata Management)
+import { Metadata } from 'next'
+import { config } from '@/lib/config'
+
+interface SEOProps {
+  title?: string
+  description?: string
+  keywords?: string[]
+  image?: string
+  url?: string
+  type?: 'website' | 'article'
+  publishedTime?: string
+  modifiedTime?: string
+}
+
+export function generateMetadata({
+  title = 'Solar Quote Matching Platform',
+  description = 'Connect with verified solar installers and get competitive quotes for your solar system in Australia. Compare prices, features, and find the perfect solar solution.',
+  keywords = ['solar panels', 'solar quotes', 'solar installers', 'renewable energy', 'Australia'],
+  image = `${config.app.url}/og-image.jpg`,
+  url = config.app.url,
+  type = 'website',
+  publishedTime,
+  modifiedTime,
+}: SEOProps = {}): Metadata {
+  const fullTitle = title.includes('SolarMatch') ? title : `${title} | SolarMatch`
+  
+  return {
+    title: fullTitle,
+    description,
+    keywords: keywords.join(', '),
+    
+    // Open Graph
+    openGraph: {
+      title: fullTitle,
+      description,
+      url,
+      siteName: 'SolarMatch',
+      images: [
+        {
+          url: image,
+          width: 1200,
+          height: 630,
+          alt: title,
+        },
+      ],
+      locale: 'en_AU',
+      type,
+      publishedTime,
+      modifiedTime,
+    },
+    
+    // Twitter
+    twitter: {
+      card: 'summary_large_image',
+      title: fullTitle,
+      description,
+      images: [image],
+      creator: '@solarmatch',
+    },
+    
+    // Additional meta tags
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        'max-video-preview': -1,
+        'max-image-preview': 'large',
+        'max-snippet': -1,
+      },
+    },
+    
+    // Canonical URL
+    alternates: {
+      canonical: url,
+    },
+    
+    // JSON-LD structured data
+    other: {
+      'application/ld+json': JSON.stringify({
+        '@context': 'https://schema.org',
+        '@type': 'WebApplication',
+        name: 'SolarMatch',
+        description,
+        url: config.app.url,
+        applicationCategory: 'BusinessApplication',
+        operatingSystem: 'Web',
+        offers: {
+          '@type': 'Offer',
+          price: '0',
+          priceCurrency: 'AUD',
+        },
+        provider: {
+          '@type': 'Organization',
+          name: 'SolarMatch',
+          url: config.app.url,
+        },
+      }),
+    },
+  }
+}
+
+// Predefined metadata for common pages
+export const pageMetadata = {
+  home: generateMetadata({
+    title: 'Get Solar Quotes from Verified Installers',
+    description: 'Compare solar quotes from trusted installers across Australia. Get competitive pricing, expert advice, and find the perfect solar system for your home.',
+    keywords: ['solar quotes', 'solar installers', 'solar panels Australia', 'compare solar prices'],
+  }),
+  
+  homeowner: generateMetadata({
+    title: 'Homeowner Dashboard - Manage Your Solar Journey',
+    description: 'Track your solar quotes, communicate with installers, and manage your solar installation journey from one convenient dashboard.',
+    keywords: ['solar dashboard', 'homeowner portal', 'solar quotes management'],
+  }),
+  
+  installer: generateMetadata({
+    title: 'Installer Portal - Connect with Solar Customers',
+    description: 'Join our network of verified solar installers. Access qualified leads, submit competitive bids, and grow your solar business.',
+    keywords: ['solar installer portal', 'solar leads', 'installer network'],
+  }),
+  
+  about: generateMetadata({
+    title: 'About SolarMatch - Connecting Solar Customers with Installers',
+    description: 'Learn about SolarMatch mission to make solar energy accessible through our platform connecting homeowners with verified solar installers.',
+    keywords: ['about solarmatch', 'solar platform', 'renewable energy'],
+  }),
+}
+```
+
+```typescript
+// app/api/sitemap/route.ts (Dynamic Sitemap Generation)
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { config } from '@/lib/config'
+
+export async function GET() {
+  const supabase = createClient()
+  
+  // Get dynamic content for sitemap
+  const [
+    { data: states },
+    { data: recentQuotes }
+  ] = await Promise.all([
+    supabase.from('australian_states').select('code, name'),
+    supabase.from('solar_quotes')
+      .select('id, updated_at')
+      .eq('status', 'completed')
+      .order('updated_at', { ascending: false })
+      .limit(1000)
+  ])
+
+  const baseUrl = config.app.url
+  const currentDate = new Date().toISOString()
+
+  // Static pages
+  const staticPages = [
+    { url: '', priority: 1.0, changefreq: 'daily' },
+    { url: '/about', priority: 0.8, changefreq: 'monthly' },
+    { url: '/how-it-works', priority: 0.8, changefreq: 'monthly' },
+    { url: '/installer-signup', priority: 0.8, changefreq: 'monthly' },
+    { url: '/homeowner-signup', priority: 0.8, changefreq: 'monthly' },
+    { url: '/request-quote', priority: 0.9, changefreq: 'weekly' },
+    { url: '/news', priority: 0.7, changefreq: 'daily' },
+  ]
+
+  // State-specific pages
+  const statePages = states?.map(state => ({
+    url: `/solar-installers/${state.code.toLowerCase()}`,
+    priority: 0.7,
+    changefreq: 'weekly',
+  })) || []
+
+  // Generate XML sitemap
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:news="http://www.google.com/schemas/sitemap-news/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml"
+        xmlns:mobile="http://www.google.com/schemas/sitemap-mobile/1.0"
+        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1"
+        xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">
+${[...staticPages, ...statePages]
+  .map(page => `  <url>
+    <loc>${baseUrl}${page.url}</loc>
+    <lastmod>${currentDate}</lastmod>
+    <changefreq>${page.changefreq}</changefreq>
+    <priority>${page.priority}</priority>
+  </url>`).join('\n')}
+</urlset>`
+
+  return new NextResponse(sitemap, {
+    headers: {
+      'Content-Type': 'application/xml',
+      'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+    },
+  })
+}
+```
+
+```typescript
+// app/api/robots/route.ts (Robots.txt Generation)
+import { NextResponse } from 'next/server'
+import { config } from '@/lib/config'
+
+export async function GET() {
+  const isProduction = config.app.env === 'production'
+  
+  const robots = `User-agent: *
+${isProduction ? 'Allow: /' : 'Disallow: /'}
+
+# Admin and private areas
+Disallow: /admin/
+Disallow: /api/
+Disallow: /private/
+Disallow: /_next/
+Disallow: /dashboard/*/private
+
+# Allow important pages
+Allow: /api/sitemap
+Allow: /api/robots
+
+# Sitemap location
+Sitemap: ${config.app.url}/sitemap.xml
+
+# Crawl delay
+Crawl-delay: 1
+
+# Specific bot instructions
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: facebookexternalhit
+Allow: /`
+
+  return new NextResponse(robots, {
+    headers: {
+      'Content-Type': 'text/plain',
+      'Cache-Control': 'public, max-age=3600',
+    },
+  })
+}
+```
+
+### STEP 5: Health Checks and Cron Jobs
+**Timeline:** Day 2 Evening
+**Files:** System monitoring endpoints
+
+```typescript
+// app/api/health/route.ts (Health Check Endpoint)
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { config } from '@/lib/config'
+
+interface HealthCheck {
+  status: 'healthy' | 'degraded' | 'unhealthy'
+  timestamp: string
+  version: string
+  environment: string
+  services: {
+    database: 'up' | 'down'
+    stripe: 'up' | 'down'
+    ai: 'up' | 'down'
+  }
+  metrics: {
+    uptime: number
+    memory: {
+      used: number
+      total: number
+      percentage: number
+    }
+  }
+}
+
+export async function GET() {
+  const startTime = Date.now()
+  const services = {
+    database: 'down' as const,
+    stripe: 'down' as const,
+    ai: 'down' as const,
+  }
+
+  // Check database connection
+  try {
+    const supabase = createClient()
+    const { error } = await supabase.from('profiles').select('id').limit(1)
+    services.database = error ? 'down' : 'up'
+  } catch (error) {
+    console.error('Database health check failed:', error)
+  }
+
+  // Check Stripe API
+  try {
+    const response = await fetch('https://api.stripe.com/v1/charges?limit=1', {
+      headers: {
+        'Authorization': `Bearer ${config.stripe.secretKey}`,
+      },
+    })
+    services.stripe = response.ok ? 'up' : 'down'
+  } catch (error) {
+    console.error('Stripe health check failed:', error)
+  }
+
+  // Check AI API
+  try {
+    const response = await fetch('https://api.deepseek.com/v1/models', {
+      headers: {
+        'Authorization': `Bearer ${config.ai.deepseekApiKey}`,
+      },
+    })
+    services.ai = response.ok ? 'up' : 'down'
+  } catch (error) {
+    console.error('AI health check failed:', error)
+  }
+
+  // Determine overall status
+  const servicesDown = Object.values(services).filter(status => status === 'down').length
+  let overallStatus: HealthCheck['status'] = 'healthy'
+  
+  if (servicesDown > 0) {
+    overallStatus = servicesDown >= 2 ? 'unhealthy' : 'degraded'
+  }
+
+  // Get memory usage (Node.js)
+  const memoryUsage = process.memoryUsage()
+  const memoryTotal = memoryUsage.heapTotal
+  const memoryUsed = memoryUsage.heapUsed
+  const memoryPercentage = (memoryUsed / memoryTotal) * 100
+
+  const healthCheck: HealthCheck = {
+    status: overallStatus,
+    timestamp: new Date().toISOString(),
+    version: config.app.version,
+    environment: config.app.env,
+    services,
+    metrics: {
+      uptime: process.uptime(),
+      memory: {
+        used: memoryUsed,
+        total: memoryTotal,
+        percentage: Math.round(memoryPercentage * 100) / 100,
+      },
+    },
+  }
+
+  const responseTime = Date.now() - startTime
+  
+  return NextResponse.json(healthCheck, {
+    status: overallStatus === 'unhealthy' ? 503 : 200,
+    headers: {
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'X-Response-Time': `${responseTime}ms`,
+    },
+  })
+}
+```
+
+```typescript
+// app/api/cron/cleanup/route.ts (Scheduled Cleanup Tasks)
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+
+export async function GET(request: NextRequest) {
+  // Verify cron secret or authorization
+  const authHeader = request.headers.get('authorization')
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const supabase = createClient()
+  const results = []
+
+  try {
+    // Clean up expired sessions
+    const { error: sessionsError } = await supabase
+      .from('user_sessions')
+      .delete()
+      .lt('expires_at', new Date().toISOString())
+    
+    if (sessionsError) throw sessionsError
+    results.push('Expired sessions cleaned')
+
+    // Clean up old audit logs (keep 6 months)
+    const sixMonthsAgo = new Date()
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6)
+    
+    const { error: logsError } = await supabase
+      .from('audit_logs')
+      .delete()
+      .lt('created_at', sixMonthsAgo.toISOString())
+    
+    if (logsError) throw logsError
+    results.push('Old audit logs cleaned')
+
+    // Clean up abandoned quotes (no activity for 30 days)
+    const thirtyDaysAgo = new Date()
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    
+    const { error: quotesError } = await supabase
+      .from('solar_quotes')
+      .update({ status: 'abandoned' })
+      .eq('status', 'draft')
+      .lt('updated_at', thirtyDaysAgo.toISOString())
+    
+    if (quotesError) throw quotesError
+    results.push('Abandoned quotes marked')
+
+    // Clean up expired file uploads
+    const { error: filesError } = await supabase.storage
+      .from('temp-uploads')
+      .remove([]) // This would list and remove expired files
+    
+    results.push('Expired files cleaned')
+
+    return NextResponse.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      results,
+    })
+  } catch (error) {
+    console.error('Cleanup cron job failed:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString(),
+    }, { status: 500 })
+  }
+}
+```
+
+### STEP 6: Performance Optimization
+**Timeline:** Day 3
+**Files:** Caching and optimization
+
+```typescript
+// lib/cache/redis.ts (Redis Caching Layer)
+import { Redis } from '@upstash/redis'
+
+const redis = process.env.UPSTASH_REDIS_REST_URL 
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+  : null
+
+export class CacheManager {
+  private defaultTTL = 3600 // 1 hour in seconds
+
+  async get<T>(key: string): Promise<T | null> {
+    if (!redis) return null
+    
+    try {
+      const value = await redis.get(key)
+      return value as T
+    } catch (error) {
+      console.error('Cache get error:', error)
+      return null
+    }
+  }
+
+  async set(key: string, value: any, ttl = this.defaultTTL): Promise<void> {
+    if (!redis) return
+    
+    try {
+      await redis.setex(key, ttl, JSON.stringify(value))
+    } catch (error) {
+      console.error('Cache set error:', error)
+    }
+  }
+
+  async del(key: string): Promise<void> {
+    if (!redis) return
+    
+    try {
+      await redis.del(key)
+    } catch (error) {
+      console.error('Cache delete error:', error)
+    }
+  }
+
+  async invalidatePattern(pattern: string): Promise<void> {
+    if (!redis) return
+    
+    try {
+      const keys = await redis.keys(pattern)
+      if (keys.length > 0) {
+        await redis.del(...keys)
+      }
+    } catch (error) {
+      console.error('Cache invalidate error:', error)
+    }
+  }
+
+  // Cache keys generators
+  userKey(userId: string) {
+    return `user:${userId}`
+  }
+
+  quoteKey(quoteId: string) {
+    return `quote:${quoteId}`
+  }
+
+  installerKey(installerId: string) {
+    return `installer:${installerId}`
+  }
+
+  statsKey(type: string, period: string) {
+    return `stats:${type}:${period}`
+  }
+}
+
+export const cache = new CacheManager()
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Deployment Configuration:
+- [ ] Vercel deployment configuration optimized
+- [ ] Environment variables properly configured
+- [ ] Security headers implemented
+- [ ] CDN and caching configured
+
+### CI/CD Pipeline:
+- [ ] GitHub Actions workflow functioning
+- [ ] Automated testing in pipeline
+- [ ] Staging deployments working
+- [ ] Production deployments successful
+
+### Monitoring:
+- [ ] Error tracking with Sentry operational
+- [ ] Analytics tracking user interactions
+- [ ] Performance monitoring active
+- [ ] Health checks responding correctly
+
+### SEO Optimization:
+- [ ] Meta tags dynamically generated
+- [ ] Sitemap automatically updated
+- [ ] Robots.txt configured
+- [ ] Structured data implemented
+
+### Performance:
+- [ ] Caching strategies implemented
+- [ ] Image optimization configured
+- [ ] Bundle sizes optimized
+- [ ] Core Web Vitals within targets
+
+---
+
+## 🚨 PRODUCTION CONSIDERATIONS
+
+### Security:
+- [ ] All secrets stored securely in environment variables
+- [ ] Rate limiting implemented on all endpoints
+- [ ] HTTPS enforced with proper certificates
+- [ ] Content Security Policy configured
+
+### Monitoring:
+- [ ] Set up alerting for critical errors
+- [ ] Monitor performance metrics
+- [ ] Track business metrics
+- [ ] Set up uptime monitoring
+
+### Backup and Recovery:
+- [ ] Database backups automated
+- [ ] File storage backups configured  
+- [ ] Disaster recovery plan documented
+- [ ] Data retention policies implemented
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Perform comprehensive production testing
+2. Set up monitoring dashboards and alerts
+3. Create deployment documentation
+4. Train team on production procedures
+5. Proceed to final Integration & Testing phase

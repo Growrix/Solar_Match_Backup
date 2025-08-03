@@ -1,0 +1,1460 @@
+# QUOTE VERSIONING SYSTEM - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** MEDIUM - EXECUTE AFTER BIDDING SYSTEM  
+**Dependencies:** BiddingSystemImplementation.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Implement comprehensive quote versioning system with revision history and negotiation tracking
+**Estimated Time:** 2-3 days
+**Risk Level:** MEDIUM (Complex state management)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Create quote versioning service and data structures
+2. Implement version comparison functionality
+3. Build negotiation workflow management
+4. Create version history UI components
+5. Test quote revision and approval process
+
+---
+
+## 🎯 QUOTE VERSIONING REQUIREMENTS
+
+**Core Features:**
+- ✅ Complete revision history for all quotes
+- ✅ Version comparison tools
+- ✅ Installer can create multiple versions
+- ✅ Homeowner can view and compare versions
+- ✅ Negotiation workflow management
+- ✅ Revert to previous versions
+- ✅ Final version acceptance/rejection
+
+**Business Rules:**
+- Maximum 5 revisions per negotiation
+- 7-day negotiation deadline
+- Version changes require justification
+- Only current versions visible to homeowners
+- Archived versions maintain audit trail
+
+---
+
+## 🔧 EXECUTION STEPS
+
+### STEP 1: Quote Versioning Service Implementation
+**Timeline:** Day 1 Full Day
+**Files:** `lib/services/quoteVersioningService.ts`
+
+```typescript
+// lib/services/quoteVersioningService.ts
+import { createClient } from '@/lib/supabase'
+import type { 
+  QuoteVersion, 
+  QuoteNegotiation,
+  InsertQuoteVersion,
+  InsertQuoteNegotiation 
+} from '@/types/database.types'
+
+export class QuoteVersioningService {
+  private supabase = createClient()
+
+  /**
+   * Create initial quote version from bid
+   */
+  async createInitialVersion(
+    quoteId: string,
+    installerId: string,
+    bidData: {
+      system_size_kw: number
+      total_cost_cents: number
+      panel_brand?: string
+      panel_model?: string
+      inverter_brand?: string
+      inverter_model?: string
+      warranty_years?: number
+      installation_timeline_days?: number
+      includes_battery?: boolean
+      battery_brand?: string
+      battery_model?: string
+      battery_capacity_kwh?: number
+      equipment_cost_cents?: number
+      installation_cost_cents?: number
+      additional_costs_cents?: number
+      terms_text?: string
+      proposal_notes?: string
+    }
+  ): Promise<{ version: QuoteVersion; negotiation: QuoteNegotiation }> {
+    try {
+      // Create negotiation record first
+      const { data: negotiation, error: negotiationError } = await this.supabase
+        .from('quote_negotiations')
+        .insert({
+          quote_id: quoteId,
+          installer_id: installerId,
+          status: 'active',
+          current_revisions: 0,
+          negotiation_deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        } as InsertQuoteNegotiation)
+        .select()
+        .single()
+
+      if (negotiationError || !negotiation) {
+        throw new Error('Failed to create negotiation record')
+      }
+
+      // Create initial version
+      const { data: version, error: versionError } = await this.supabase
+        .from('quote_versions')
+        .insert({
+          quote_id: quoteId,
+          installer_id: installerId,
+          version_number: 1,
+          is_current: true,
+          is_final: false,
+          status: 'draft',
+          change_summary: 'Initial quote version',
+          change_reason: 'Created from winning bid',
+          ...bidData,
+        } as InsertQuoteVersion)
+        .select()
+        .single()
+
+      if (versionError || !version) {
+        throw new Error('Failed to create quote version')
+      }
+
+      // Update negotiation with current version
+      await this.supabase
+        .from('quote_negotiations')
+        .update({
+          current_version_id: version.id,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', negotiation.id)
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'quote',
+        p_event_type: 'version_created',
+        p_message: 'Initial quote version created',
+        p_severity: 'info',
+        p_user_id: installerId,
+        p_details: {
+          quoteId,
+          versionId: version.id,
+          versionNumber: 1,
+        },
+      })
+
+      return { version, negotiation }
+    } catch (error) {
+      console.error('Error creating initial version:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Create new quote version (revision)
+   */
+  async createRevision(
+    quoteId: string,
+    installerId: string,
+    changes: Partial<QuoteVersion>,
+    changeSummary: string,
+    changeReason: string
+  ): Promise<QuoteVersion> {
+    try {
+      // Get current negotiation
+      const { data: negotiation, error: negotiationError } = await this.supabase
+        .from('quote_negotiations')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .eq('installer_id', installerId)
+        .single()
+
+      if (negotiationError || !negotiation) {
+        throw new Error('Negotiation not found')
+      }
+
+      // Check revision limits
+      if (negotiation.current_revisions >= negotiation.max_revisions) {
+        throw new Error('Maximum revisions exceeded')
+      }
+
+      // Check deadline
+      if (new Date() > new Date(negotiation.negotiation_deadline)) {
+        throw new Error('Negotiation deadline has passed')
+      }
+
+      // Get current version for baseline
+      const { data: currentVersion, error: currentError } = await this.supabase
+        .from('quote_versions')
+        .select('*')
+        .eq('id', negotiation.current_version_id!)
+        .single()
+
+      if (currentError || !currentVersion) {
+        throw new Error('Current version not found')
+      }
+
+      // Mark current version as not current
+      await this.supabase
+        .from('quote_versions')
+        .update({
+          is_current: false,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('quote_id', quoteId)
+        .eq('installer_id', installerId)
+        .eq('is_current', true)
+
+      // Create new version
+      const newVersionNumber = currentVersion.version_number + 1
+      const { data: newVersion, error: versionError } = await this.supabase
+        .from('quote_versions')
+        .insert({
+          quote_id: quoteId,
+          installer_id: installerId,
+          version_number: newVersionNumber,
+          is_current: true,
+          is_final: false,
+          status: 'draft',
+          change_summary: changeSummary,
+          change_reason: changeReason,
+          // Copy from current version and apply changes
+          system_size_kw: changes.system_size_kw ?? currentVersion.system_size_kw,
+          total_cost_cents: changes.total_cost_cents ?? currentVersion.total_cost_cents,
+          panel_brand: changes.panel_brand ?? currentVersion.panel_brand,
+          panel_model: changes.panel_model ?? currentVersion.panel_model,
+          inverter_brand: changes.inverter_brand ?? currentVersion.inverter_brand,
+          inverter_model: changes.inverter_model ?? currentVersion.inverter_model,
+          warranty_years: changes.warranty_years ?? currentVersion.warranty_years,
+          installation_timeline_days: changes.installation_timeline_days ?? currentVersion.installation_timeline_days,
+          includes_battery: changes.includes_battery ?? currentVersion.includes_battery,
+          battery_brand: changes.battery_brand ?? currentVersion.battery_brand,
+          battery_model: changes.battery_model ?? currentVersion.battery_model,
+          battery_capacity_kwh: changes.battery_capacity_kwh ?? currentVersion.battery_capacity_kwh,
+          equipment_cost_cents: changes.equipment_cost_cents ?? currentVersion.equipment_cost_cents,
+          installation_cost_cents: changes.installation_cost_cents ?? currentVersion.installation_cost_cents,
+          additional_costs_cents: changes.additional_costs_cents ?? currentVersion.additional_costs_cents,
+          terms_text: changes.terms_text ?? currentVersion.terms_text,
+          proposal_notes: changes.proposal_notes ?? currentVersion.proposal_notes,
+        } as InsertQuoteVersion)
+        .select()
+        .single()
+
+      if (versionError || !newVersion) {
+        throw new Error('Failed to create new version')
+      }
+
+      // Update negotiation
+      await this.supabase
+        .from('quote_negotiations')
+        .update({
+          current_version_id: newVersion.id,
+          current_revisions: negotiation.current_revisions + 1,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', negotiation.id)
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'quote',
+        p_event_type: 'version_revised',
+        p_message: `Quote version ${newVersionNumber} created: ${changeSummary}`,
+        p_severity: 'info',
+        p_user_id: installerId,
+        p_details: {
+          quoteId,
+          versionId: newVersion.id,
+          versionNumber: newVersionNumber,
+          changeSummary,
+          changeReason,
+        },
+      })
+
+      return newVersion
+    } catch (error) {
+      console.error('Error creating revision:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Revert to previous version
+   */
+  async revertToVersion(
+    quoteId: string,
+    installerId: string,
+    targetVersionNumber: number,
+    revertReason: string
+  ): Promise<QuoteVersion> {
+    try {
+      // Get target version
+      const { data: targetVersion, error: targetError } = await this.supabase
+        .from('quote_versions')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .eq('installer_id', installerId)
+        .eq('version_number', targetVersionNumber)
+        .single()
+
+      if (targetError || !targetVersion) {
+        throw new Error('Target version not found')
+      }
+
+      // Create new version based on target version
+      const revertedVersion = await this.createRevision(
+        quoteId,
+        installerId,
+        {
+          system_size_kw: targetVersion.system_size_kw,
+          total_cost_cents: targetVersion.total_cost_cents,
+          panel_brand: targetVersion.panel_brand,
+          panel_model: targetVersion.panel_model,
+          inverter_brand: targetVersion.inverter_brand,
+          inverter_model: targetVersion.inverter_model,
+          warranty_years: targetVersion.warranty_years,
+          installation_timeline_days: targetVersion.installation_timeline_days,
+          includes_battery: targetVersion.includes_battery,
+          battery_brand: targetVersion.battery_brand,
+          battery_model: targetVersion.battery_model,
+          battery_capacity_kwh: targetVersion.battery_capacity_kwh,
+          equipment_cost_cents: targetVersion.equipment_cost_cents,
+          installation_cost_cents: targetVersion.installation_cost_cents,
+          additional_costs_cents: targetVersion.additional_costs_cents,
+          terms_text: targetVersion.terms_text,
+          proposal_notes: targetVersion.proposal_notes,
+        },
+        `Reverted to version ${targetVersionNumber}`,
+        revertReason
+      )
+
+      // Mark as reverted from
+      await this.supabase
+        .from('quote_versions')
+        .update({
+          reverted_from_version: targetVersionNumber,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', revertedVersion.id)
+
+      return revertedVersion
+    } catch (error) {
+      console.error('Error reverting version:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Submit version to homeowner
+   */
+  async submitVersion(
+    versionId: string,
+    installerId: string
+  ): Promise<QuoteVersion> {
+    try {
+      // Verify version belongs to installer
+      const { data: version, error: versionError } = await this.suvabase
+        .from('quote_versions')
+        .select('*')
+        .eq('id', versionId)
+        .eq('installer_id', installerId)
+        .single()
+
+      if (versionError || !version) {
+        throw new Error('Version not found or unauthorized')
+      }
+
+      if (version.status !== 'draft') {
+        throw new Error('Only draft versions can be submitted')
+      }
+
+      // Update version status
+      const { data: updatedVersion, error: updateError } = await this.supabase
+        .from('quote_versions')
+        .update({
+          status: 'submitted',
+          submitted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', versionId)
+        .select()
+        .single()
+
+      if (updateError || !updatedVersion) {
+        throw new Error('Failed to submit version')
+      }
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'quote',
+        p_event_type: 'version_submitted',
+        p_message: `Quote version ${version.version_number} submitted to homeowner`,
+        p_severity: 'info',
+        p_user_id: installerId,
+        p_details: {
+          quoteId: version.quote_id,
+          versionId,
+          versionNumber: version.version_number,
+        },
+      })
+
+      return updatedVersion
+    } catch (error) {
+      console.error('Error submitting version:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Homeowner accepts/rejects version
+   */
+  async respondToVersion(
+    versionId: string,
+    homeownerId: string,
+    response: 'accepted' | 'rejected',
+    feedback?: string
+  ): Promise<QuoteVersion> {
+    try {
+      // Verify homeowner owns the quote
+      const { data: version, error: versionError } = await this.supabase
+        .from('quote_versions')
+        .select(`
+          *,
+          solar_quotes!inner(user_id)
+        `)
+        .eq('id', versionId)
+        .single()
+
+      if (versionError || !version) {
+        throw new Error('Version not found')
+      }
+
+      if (version.solar_quotes.user_id !== homeownerId) {
+        throw new Error('Unauthorized')
+      }
+
+      if (version.status !== 'submitted') {
+        throw new Error('Version must be submitted to respond')
+      }
+
+      // Update version
+      const { data: updatedVersion, error: updateError } = await this.supabase
+        .from('quote_versions')
+        .update({
+          status: response,
+          viewed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', versionId)
+        .select()
+        .single()
+
+      if (updateError || !updatedVersion) {
+        throw new Error('Failed to update version status')
+      }
+
+      // If accepted, mark as final and close negotiation
+      if (response === 'accepted') {
+        await this.supabase
+          .from('quote_versions')
+          .update({
+            is_final: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', versionId)
+
+        await this.supabase
+          .from('quote_negotiations')
+          .update({
+            status: 'completed',
+            final_version_id: versionId,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('quote_id', version.quote_id)
+          .eq('installer_id', version.installer_id)
+      }
+
+      // Log event
+      await this.supabase.rpc('log_event', {
+        p_category: 'quote',
+        p_event_type: `version_${response}`,
+        p_message: `Quote version ${version.version_number} ${response} by homeowner`,
+        p_severity: 'info',
+        p_user_id: homeownerId,
+        p_details: {
+          quoteId: version.quote_id,
+          versionId,
+          versionNumber: version.version_number,
+          feedback,
+        },
+      })
+
+      return updatedVersion
+    } catch (error) {
+      console.error('Error responding to version:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get version history for a quote
+   */
+  async getVersionHistory(
+    quoteId: string,
+    installerId: string
+  ): Promise<QuoteVersion[]> {
+    try {
+      const { data: versions, error } = await this.supabase
+        .from('quote_versions')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .eq('installer_id', installerId)
+        .order('version_number', { ascending: false })
+
+      if (error) {
+        throw new Error('Failed to fetch version history')
+      }
+
+      return versions || []
+    } catch (error) {
+      console.error('Error getting version history:', error)
+      return []
+    }
+  }
+
+  /**
+   * Compare two versions
+   */
+  async compareVersions(
+    versionId1: string,
+    versionId2: string,
+    userId: string
+  ): Promise<{
+    version1: QuoteVersion
+    version2: QuoteVersion
+    differences: Record<string, { old: any; new: any }>
+  }> {
+    try {
+      // Get both versions
+      const { data: versions, error } = await this.supabase
+        .from('quote_versions')
+        .select('*')
+        .in('id', [versionId1, versionId2])
+
+      if (error || !versions || versions.length !== 2) {
+        throw new Error('Failed to fetch versions for comparison')
+      }
+
+      const version1 = versions.find(v => v.id === versionId1)!
+      const version2 = versions.find(v => v.id === versionId2)!
+
+      // Check user has access to these versions
+      if (version1.quote_id !== version2.quote_id) {
+        throw new Error('Versions must be from the same quote')
+      }
+
+      // Calculate differences
+      const differences: Record<string, { old: any; new: any }> = {}
+      const fieldsToCompare = [
+        'system_size_kw',
+        'total_cost_cents',
+        'panel_brand',
+        'panel_model',
+        'inverter_brand',
+        'inverter_model',
+        'warranty_years',
+        'installation_timeline_days',
+        'includes_battery',
+        'battery_brand',
+        'battery_model',
+        'battery_capacity_kwh',
+        'equipment_cost_cents',
+        'installation_cost_cents',
+        'additional_costs_cents',
+        'terms_text',
+        'proposal_notes',
+      ]
+
+      fieldsToCompare.forEach(field => {
+        const oldValue = version1[field as keyof QuoteVersion]
+        const newValue = version2[field as keyof QuoteVersion]
+        
+        if (oldValue !== newValue) {
+          differences[field] = { old: oldValue, new: newValue }
+        }
+      })
+
+      return { version1, version2, differences }
+    } catch (error) {
+      console.error('Error comparing versions:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get negotiation status
+   */
+  async getNegotiationStatus(
+    quoteId: string,
+    installerId: string
+  ): Promise<QuoteNegotiation | null> {
+    try {
+      const { data: negotiation, error } = await this.supabase
+        .from('quote_negotiations')
+        .select('*')
+        .eq('quote_id', quoteId)
+        .eq('installer_id', installerId)
+        .single()
+
+      if (error) {
+        return null
+      }
+
+      return negotiation
+    } catch (error) {
+      console.error('Error getting negotiation status:', error)
+      return null
+    }
+  }
+}
+
+// Export singleton instance
+export const quoteVersioningService = new QuoteVersioningService()
+```
+
+### STEP 2: Quote Versioning Hooks
+**Timeline:** Day 2 Morning
+**Files:** `hooks/useQuoteVersions.ts`
+
+```typescript
+// hooks/useQuoteVersions.ts
+import { useState, useEffect, useCallback } from 'react'
+import { quoteVersioningService } from '@/lib/services/quoteVersioningService'
+import type { QuoteVersion, QuoteNegotiation } from '@/types/database.types'
+
+export interface UseQuoteVersionsOptions {
+  quoteId: string
+  installerId?: string
+  homeownerId?: string
+  autoRefresh?: boolean
+}
+
+export function useQuoteVersions({
+  quoteId,
+  installerId,
+  homeownerId,
+  autoRefresh = true,
+}: UseQuoteVersionsOptions) {
+  const [versions, setVersions] = useState<QuoteVersion[]>([])
+  const [currentVersion, setCurrentVersion] = useState<QuoteVersion | null>(null)
+  const [negotiation, setNegotiation] = useState<QuoteNegotiation | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  // Load version data
+  const loadVersions = useCallback(async () => {
+    if (!quoteId || !installerId) return
+
+    try {
+      setIsLoading(true)
+      
+      // Get version history
+      const versionHistory = await quoteVersioningService.getVersionHistory(
+        quoteId,
+        installerId
+      )
+      setVersions(versionHistory)
+
+      // Find current version
+      const current = versionHistory.find(v => v.is_current)
+      setCurrentVersion(current || null)
+
+      // Get negotiation status
+      const negotiationStatus = await quoteVersioningService.getNegotiationStatus(
+        quoteId,
+        installerId
+      )
+      setNegotiation(negotiationStatus)
+
+      setError(null)
+    } catch (err) {
+      setError('Failed to load quote versions')
+      console.error('Error loading versions:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [quoteId, installerId])
+
+  // Load data on mount
+  useEffect(() => {
+    loadVersions()
+  }, [loadVersions])
+
+  // Auto-refresh if enabled
+  useEffect(() => {
+    if (!autoRefresh) return
+
+    const interval = setInterval(loadVersions, 30000) // Refresh every 30 seconds
+    return () => clearInterval(interval)
+  }, [loadVersions, autoRefresh])
+
+  // Create revision
+  const createRevision = useCallback(async (
+    changes: Partial<QuoteVersion>,
+    changeSummary: string,
+    changeReason: string
+  ) => {
+    if (!quoteId || !installerId) {
+      throw new Error('Quote ID and Installer ID required')
+    }
+
+    try {
+      const newVersion = await quoteVersioningService.createRevision(
+        quoteId,
+        installerId,
+        changes,
+        changeSummary,
+        changeReason
+      )
+
+      // Update local state
+      setVersions(prev => [newVersion, ...prev.map(v => ({ ...v, is_current: false }))])
+      setCurrentVersion(newVersion)
+
+      return newVersion
+    } catch (err) {
+      console.error('Error creating revision:', err)
+      throw err
+    }
+  }, [quoteId, installerId])
+
+  // Revert to version
+  const revertToVersion = useCallback(async (
+    targetVersionNumber: number,
+    revertReason: string
+  ) => {
+    if (!quoteId || !installerId) {
+      throw new Error('Quote ID and Installer ID required')
+    }
+
+    try {
+      const revertedVersion = await quoteVersioningService.revertToVersion(
+        quoteId,
+        installerId,
+        targetVersionNumber,
+        revertReason
+      )
+
+      // Reload data to get updated state
+      await loadVersions()
+
+      return revertedVersion
+    } catch (err) {
+      console.error('Error reverting version:', err)
+      throw err
+    }
+  }, [quoteId, installerId, loadVersions])
+
+  // Submit version
+  const submitVersion = useCallback(async (versionId: string) => {
+    if (!installerId) {
+      throw new Error('Installer ID required')
+    }
+
+    try {
+      const submittedVersion = await quoteVersioningService.submitVersion(
+        versionId,
+        installerId
+      )
+
+      // Update local state
+      setVersions(prev =>
+        prev.map(v => v.id === versionId ? submittedVersion : v)
+      )
+
+      if (currentVersion?.id === versionId) {
+        setCurrentVersion(submittedVersion)
+      }
+
+      return submittedVersion
+    } catch (err) {
+      console.error('Error submitting version:', err)
+      throw err
+    }
+  }, [installerId, currentVersion])
+
+  // Respond to version (homeowner)
+  const respondToVersion = useCallback(async (
+    versionId: string,
+    response: 'accepted' | 'rejected',
+    feedback?: string
+  ) => {
+    if (!homeownerId) {
+      throw new Error('Homeowner ID required')
+    }
+
+    try {
+      const updatedVersion = await quoteVersioningService.respondToVersion(
+        versionId,
+        homeownerId,
+        response,
+        feedback
+      )
+
+      // Reload data to get updated negotiation status
+      await loadVersions()
+
+      return updatedVersion
+    } catch (err) {
+      console.error('Error responding to version:', err)
+      throw err
+    }
+  }, [homeownerId, loadVersions])
+
+  // Compare versions
+  const compareVersions = useCallback(async (
+    versionId1: string,
+    versionId2: string
+  ) => {
+    const userId = installerId || homeownerId
+    if (!userId) {
+      throw new Error('User ID required')
+    }
+
+    try {
+      return await quoteVersioningService.compareVersions(
+        versionId1,
+        versionId2,
+        userId
+      )
+    } catch (err) {
+      console.error('Error comparing versions:', err)
+      throw err
+    }
+  }, [installerId, homeownerId])
+
+  // Get version by number
+  const getVersionByNumber = useCallback((versionNumber: number) => {
+    return versions.find(v => v.version_number === versionNumber) || null
+  }, [versions])
+
+  // Check if can create revision
+  const canCreateRevision = useCallback(() => {
+    if (!negotiation || !currentVersion) return false
+    
+    return (
+      negotiation.status === 'active' &&
+      negotiation.current_revisions < negotiation.max_revisions &&
+      new Date() < new Date(negotiation.negotiation_deadline) &&
+      currentVersion.status !== 'accepted'
+    )
+  }, [negotiation, currentVersion])
+
+  // Get time remaining for negotiation
+  const getTimeRemaining = useCallback(() => {
+    if (!negotiation) return 0
+    
+    const deadline = new Date(negotiation.negotiation_deadline)
+    const now = new Date()
+    return Math.max(0, deadline.getTime() - now.getTime())
+  }, [negotiation])
+
+  return {
+    versions,
+    currentVersion,
+    negotiation,
+    isLoading,
+    error,
+    createRevision,
+    revertToVersion,
+    submitVersion,
+    respondToVersion,
+    compareVersions,
+    getVersionByNumber,
+    canCreateRevision,
+    getTimeRemaining,
+    reload: loadVersions,
+  }
+}
+```
+
+### STEP 3: Version Comparison Component
+**Timeline:** Day 2 Afternoon to Day 3 Morning
+**Files:** `components/quotes/VersionComparison.tsx`
+
+```typescript
+// components/quotes/VersionComparison.tsx
+'use client'
+
+import { useState, useEffect } from 'react'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { 
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { 
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { 
+  ArrowRight, 
+  ArrowLeft, 
+  Eye, 
+  Calendar,
+  DollarSign,
+  Zap,
+  Shield,
+  Clock,
+  Battery,
+} from 'lucide-react'
+import { formatCurrency, formatDate } from '@/lib/utils'
+import type { QuoteVersion } from '@/types/database.types'
+
+interface VersionComparisonProps {
+  versions: QuoteVersion[]
+  onCompare?: (versionId1: string, versionId2: string) => Promise<any>
+  className?: string
+}
+
+export function VersionComparison({ 
+  versions, 
+  onCompare,
+  className 
+}: VersionComparisonProps) {
+  const [selectedVersion1, setSelectedVersion1] = useState<string>('')
+  const [selectedVersion2, setSelectedVersion2] = useState<string>('')
+  const [comparison, setComparison] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(false)
+
+  // Auto-select versions for comparison
+  useEffect(() => {
+    if (versions.length >= 2 && !selectedVersion1 && !selectedVersion2) {
+      setSelectedVersion1(versions[0].id) // Latest version
+      setSelectedVersion2(versions[1].id) // Previous version
+    }
+  }, [versions, selectedVersion1, selectedVersion2])
+
+  const handleCompare = async () => {
+    if (!selectedVersion1 || !selectedVersion2 || !onCompare) return
+
+    setIsLoading(true)
+    try {
+      const result = await onCompare(selectedVersion1, selectedVersion2)
+      setComparison(result)
+    } catch (error) {
+      console.error('Error comparing versions:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const version1 = versions.find(v => v.id === selectedVersion1)
+  const version2 = versions.find(v => v.id === selectedVersion2)
+
+  return (
+    <div className={className}>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Eye className="h-5 w-5" />
+            Version Comparison
+          </CardTitle>
+          <CardDescription>
+            Compare different versions of your quote to see what changed
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Version Selection */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Version A</label>
+              <Select value={selectedVersion1} onValueChange={setSelectedVersion1}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((version) => (
+                    <SelectItem key={version.id} value={version.id}>
+                      v{version.version_number} - {version.change_summary}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex justify-center">
+              <ArrowRight className="h-5 w-5 text-muted-foreground" />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Version B</label>
+              <Select value={selectedVersion2} onValueChange={setSelectedVersion2}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((version) => (
+                    <SelectItem 
+                      key={version.id} 
+                      value={version.id}
+                      disabled={version.id === selectedVersion1}
+                    >
+                      v{version.version_number} - {version.change_summary}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="flex justify-center">
+            <Button 
+              onClick={handleCompare}
+              disabled={!selectedVersion1 || !selectedVersion2 || isLoading}
+            >
+              {isLoading ? 'Comparing...' : 'Compare Versions'}
+            </Button>
+          </div>
+
+          {/* Comparison Results */}
+          {comparison && version1 && version2 && (
+            <div className="space-y-6">
+              <Separator />
+              
+              {/* Version Headers */}
+              <div className="grid grid-cols-2 gap-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">
+                        Version {version1.version_number}
+                      </CardTitle>
+                      <Badge variant={version1.is_current ? 'default' : 'secondary'}>
+                        {version1.is_current ? 'Current' : 'Previous'}
+                      </Badge>
+                    </div>
+                    <CardDescription className="flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(version1.created_at)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      {version1.change_summary}
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg">
+                        Version {version2.version_number}
+                      </CardTitle>
+                      <Badge variant={version2.is_current ? 'default' : 'secondary'}>
+                        {version2.is_current ? 'Current' : 'Previous'}
+                      </Badge>
+                    </div>
+                    <CardDescription className="flex items-center gap-2">
+                      <Calendar className="h-3 w-3" />
+                      {formatDate(version2.created_at)}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">
+                      {version2.change_summary}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Differences Table */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Changes</CardTitle>
+                  <CardDescription>
+                    {Object.keys(comparison.differences).length} field(s) changed
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {Object.keys(comparison.differences).length > 0 ? (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Field</TableHead>
+                          <TableHead>Version {version1.version_number}</TableHead>
+                          <TableHead>Version {version2.version_number}</TableHead>
+                          <TableHead>Change</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {Object.entries(comparison.differences).map(([field, change]: [string, any]) => (
+                          <TableRow key={field}>
+                            <TableCell className="font-medium">
+                              <div className="flex items-center gap-2">
+                                {getFieldIcon(field)}
+                                {formatFieldName(field)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-sm bg-muted px-2 py-1 rounded">
+                                {formatFieldValue(field, change.old)}
+                              </code>
+                            </TableCell>
+                            <TableCell>
+                              <code className="text-sm bg-muted px-2 py-1 rounded">
+                                {formatFieldValue(field, change.new)}
+                              </code>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1 text-sm">
+                                {getChangeIndicator(field, change.old, change.new)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-8">
+                      No differences found between selected versions
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Side-by-side Comparison */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Full Comparison</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-6">
+                    <VersionDetails version={version1} title={`Version ${version1.version_number}`} />
+                    <VersionDetails version={version2} title={`Version ${version2.version_number}`} />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function VersionDetails({ version, title }: { version: QuoteVersion; title: string }) {
+  return (
+    <div className="space-y-4">
+      <h3 className="font-semibold text-lg">{title}</h3>
+      
+      <div className="space-y-3 text-sm">
+        <div className="flex justify-between">
+          <span>Total Cost:</span>
+          <span className="font-medium">{formatCurrency(version.total_cost_cents)}</span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span>System Size:</span>
+          <span className="font-medium">{version.system_size_kw}kW</span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span>Panel Brand:</span>
+          <span className="font-medium">{version.panel_brand || 'Not specified'}</span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span>Warranty:</span>
+          <span className="font-medium">{version.warranty_years} years</span>
+        </div>
+        
+        <div className="flex justify-between">
+          <span>Installation Timeline:</span>
+          <span className="font-medium">{version.installation_timeline_days || 'TBD'} days</span>
+        </div>
+        
+        {version.includes_battery && (
+          <div className="flex justify-between">
+            <span>Battery:</span>
+            <span className="font-medium">
+              {version.battery_capacity_kwh}kWh {version.battery_brand}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function getFieldIcon(field: string) {
+  const iconMap: Record<string, any> = {
+    total_cost_cents: <DollarSign className="h-3 w-3" />,
+    system_size_kw: <Zap className="h-3 w-3" />,
+    warranty_years: <Shield className="h-3 w-3" />,
+    installation_timeline_days: <Clock className="h-3 w-3" />,
+    includes_battery: <Battery className="h-3 w-3" />,
+  }
+  
+  return iconMap[field] || null
+}
+
+function formatFieldName(field: string): string {
+  const nameMap: Record<string, string> = {
+    total_cost_cents: 'Total Cost',
+    system_size_kw: 'System Size',
+    panel_brand: 'Panel Brand',
+    panel_model: 'Panel Model',
+    inverter_brand: 'Inverter Brand',
+    inverter_model: 'Inverter Model',
+    warranty_years: 'Warranty',
+    installation_timeline_days: 'Installation Timeline',
+    includes_battery: 'Includes Battery',
+    battery_brand: 'Battery Brand',
+    battery_model: 'Battery Model',
+    battery_capacity_kwh: 'Battery Capacity',
+    equipment_cost_cents: 'Equipment Cost',
+    installation_cost_cents: 'Installation Cost',
+    additional_costs_cents: 'Additional Costs',
+    terms_text: 'Terms & Conditions',
+    proposal_notes: 'Proposal Notes',
+  }
+  
+  return nameMap[field] || field.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+function formatFieldValue(field: string, value: any): string {
+  if (value === null || value === undefined) return 'Not specified'
+  
+  if (field.includes('cost_cents')) {
+    return formatCurrency(value)
+  }
+  
+  if (field === 'system_size_kw' || field === 'battery_capacity_kwh') {
+    return `${value}${field.includes('kw') ? 'kW' : 'kWh'}`
+  }
+  
+  if (field === 'warranty_years') {
+    return `${value} years`
+  }
+  
+  if (field === 'installation_timeline_days') {
+    return `${value} days`
+  }
+  
+  if (field === 'includes_battery') {
+    return value ? 'Yes' : 'No'
+  }
+  
+  return String(value)
+}
+
+function getChangeIndicator(field: string, oldValue: any, newValue: any) {
+  if (field.includes('cost_cents') || field.includes('size_kw')) {
+    const oldNum = Number(oldValue)
+    const newNum = Number(newValue)
+    
+    if (newNum > oldNum) {
+      return <Badge variant="destructive" className="text-xs">↑ Increased</Badge>
+    } else if (newNum < oldNum) {
+      return <Badge variant="secondary" className="text-xs">↓ Decreased</Badge>
+    }
+  }
+  
+  return <Badge variant="outline" className="text-xs">Changed</Badge>
+}
+```
+
+### STEP 4: API Routes Implementation
+**Timeline:** Day 3 Afternoon
+**Files:** Multiple API routes
+
+**Create Revision API:**
+```typescript
+// app/api/quotes/versions/create/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { quoteVersioningService } from '@/lib/services/quoteVersioningService'
+import { z } from 'zod'
+
+const createRevisionSchema = z.object({
+  quoteId: z.string().uuid(),
+  changes: z.object({
+    system_size_kw: z.number().positive().optional(),
+    total_cost_cents: z.number().positive().optional(),
+    panel_brand: z.string().optional(),
+    panel_model: z.string().optional(),
+    inverter_brand: z.string().optional(),
+    inverter_model: z.string().optional(),
+    warranty_years: z.number().min(5).max(25).optional(),
+    installation_timeline_days: z.number().positive().optional(),
+    includes_battery: z.boolean().optional(),
+    battery_brand: z.string().optional(),
+    battery_model: z.string().optional(),
+    battery_capacity_kwh: z.number().positive().optional(),
+    equipment_cost_cents: z.number().positive().optional(),
+    installation_cost_cents: z.number().positive().optional(),
+    additional_costs_cents: z.number().min(0).optional(),
+    terms_text: z.string().optional(),
+    proposal_notes: z.string().optional(),
+  }),
+  changeSummary: z.string().min(1).max(200),
+  changeReason: z.string().min(1).max(500),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Verify user is an installer
+    const { data: installer, error: installerError } = await supabase
+      .from('installer_users')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (installerError || !installer) {
+      return NextResponse.json({ error: 'Only installers can create revisions' }, { status: 403 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { quoteId, changes, changeSummary, changeReason } = createRevisionSchema.parse(body)
+
+    // Create revision
+    const newVersion = await quoteVersioningService.createRevision(
+      quoteId,
+      user.id,
+      changes,
+      changeSummary,
+      changeReason
+    )
+
+    return NextResponse.json({ version: newVersion })
+  } catch (error) {
+    console.error('Create revision error:', error)
+    
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to create revision' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+**Submit Version API:**
+```typescript
+// app/api/quotes/versions/submit/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase'
+import { quoteVersioningService } from '@/lib/services/quoteVersioningService'
+import { z } from 'zod'
+
+const submitVersionSchema = z.object({
+  versionId: z.string().uuid(),
+})
+
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient()
+    
+    // Get authenticated user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Validate request body
+    const body = await request.json()
+    const { versionId } = submitVersionSchema.parse(body)
+
+    // Submit version
+    const submittedVersion = await quoteVersioningService.submitVersion(
+      versionId,
+      user.id
+    )
+
+    return NextResponse.json({ version: submittedVersion })
+  } catch (error) {
+    console.error('Submit version error:', error)
+    
+    if (error instanceof Error) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 400 }
+      )
+    }
+    
+    return NextResponse.json(
+      { error: 'Failed to submit version' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Version Management:
+- [ ] Initial versions create from winning bids
+- [ ] Revisions increment version numbers correctly
+- [ ] Version comparison shows accurate differences
+- [ ] Revert functionality works properly
+- [ ] Version limits enforced correctly
+
+### Negotiation Workflow:
+- [ ] Negotiation deadlines respected
+- [ ] Revision limits prevent abuse
+- [ ] Status updates propagate correctly
+- [ ] Final acceptance closes negotiation
+
+### User Experience:
+- [ ] Version history displays clearly
+- [ ] Comparison tool highlights changes
+- [ ] Submission workflow intuitive
+- [ ] Error messages helpful
+
+### Data Integrity:
+- [ ] Version history maintains consistency
+- [ ] RLS policies prevent unauthorized access
+- [ ] Audit trail complete for all changes
+- [ ] Performance acceptable with many versions
+
+---
+
+## 📈 NEXT STEPS
+
+After completing this execution plan:
+1. Test version creation and comparison flows
+2. Implement email notifications for version updates
+3. Add PDF export for final quote versions
+4. Create installer revision workflow UI
+5. Proceed to AI Assistant Enhancement implementation

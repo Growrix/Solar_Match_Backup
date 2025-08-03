@@ -1,0 +1,1453 @@
+# INTEGRATION & TESTING - DEVELOPER EXECUTION SCRIPT
+**Generated:** August 4, 2025  
+**Priority:** CRITICAL - EXECUTE AFTER PRODUCTION DEPLOYMENT  
+**Dependencies:** ProductionDeploymentSetup.doc must be 100% complete
+
+---
+
+## 📋 EXECUTION OVERVIEW
+
+**Objective:** Complete end-to-end testing, integration validation, and quality assurance
+**Estimated Time:** 2-3 days
+**Risk Level:** HIGH (Final validation before production launch)
+
+**DEVELOPER ACTIONS:** This script will guide you to:
+1. Set up comprehensive testing infrastructure
+2. Create integration tests for all API endpoints
+3. Implement end-to-end user journey testing
+4. Run performance and security testing
+5. Validate complete platform functionality
+
+---
+
+## 🎯 INTEGRATION & TESTING REQUIREMENTS
+
+**Current State Analysis:**
+- All 9 previous execution plans completed
+- Complete SolarMatch platform built
+- No comprehensive testing strategy implemented
+- No integration testing between systems
+- No performance benchmarking
+- No security penetration testing
+
+**Testing Requirements Needed:**
+- ✅ Unit testing for critical functions
+- ✅ Integration testing for API endpoints
+- ✅ End-to-end user journey testing
+- ✅ Performance and load testing
+- ✅ Security vulnerability testing
+- ✅ Cross-browser compatibility testing
+- ✅ Mobile responsiveness testing
+- ✅ Payment system integration testing
+- ✅ Real-time features testing
+- ✅ Database integrity and migration testing
+
+---
+
+## 🔧 EXECUTION STEPS
+
+### STEP 1: Testing Infrastructure Setup
+**Timeline:** Day 1 Morning
+**Files:** Testing configuration and setup
+
+```json
+// jest.config.js (Jest Testing Configuration)
+const nextJest = require('next/jest')
+
+const createJestConfig = nextJest({
+  dir: './',
+})
+
+const customJestConfig = {
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
+  moduleNameMapping: {
+    '^@/components/(.*)$': '<rootDir>/components/$1',
+    '^@/pages/(.*)$': '<rootDir>/pages/$1',
+    '^@/lib/(.*)$': '<rootDir>/lib/$1',
+    '^@/hooks/(.*)$': '<rootDir>/hooks/$1',
+    '^@/types/(.*)$': '<rootDir>/types/$1',
+  },
+  testEnvironment: 'jest-environment-jsdom',
+  collectCoverageFrom: [
+    'components/**/*.{js,jsx,ts,tsx}',
+    'lib/**/*.{js,jsx,ts,tsx}',
+    'hooks/**/*.{js,jsx,ts,tsx}',
+    'app/**/*.{js,jsx,ts,tsx}',
+    '!**/*.d.ts',
+    '!**/node_modules/**',
+  ],
+  coverageThreshold: {
+    global: {
+      branches: 70,
+      functions: 70,
+      lines: 70,
+      statements: 70,
+    },
+  },
+  testMatch: [
+    '<rootDir>/**/__tests__/**/*.{js,jsx,ts,tsx}',
+    '<rootDir>/**/*.{test,spec}.{js,jsx,ts,tsx}',
+  ],
+  moduleDirectories: ['node_modules', '<rootDir>/'],
+  testTimeout: 10000,
+}
+
+module.exports = createJestConfig(customJestConfig)
+```
+
+```javascript
+// jest.setup.js (Jest Setup Configuration)
+import '@testing-library/jest-dom'
+import { TextEncoder, TextDecoder } from 'util'
+import fetchMock from 'jest-fetch-mock'
+
+// Polyfills
+global.TextEncoder = TextEncoder
+global.TextDecoder = TextDecoder
+
+// Mock fetch
+fetchMock.enableMocks()
+
+// Mock Next.js router
+jest.mock('next/navigation', () => ({
+  useRouter() {
+    return {
+      push: jest.fn(),
+      replace: jest.fn(),
+      prefetch: jest.fn(),
+      back: jest.fn(),
+      pathname: '/',
+      query: {},
+      asPath: '/',
+    }
+  },
+  useSearchParams() {
+    return new URLSearchParams()
+  },
+  usePathname() {
+    return '/'
+  },
+}))
+
+// Mock Supabase
+jest.mock('@/lib/supabase', () => ({
+  createClient: jest.fn(() => ({
+    auth: {
+      getUser: jest.fn(),
+      signInWithPassword: jest.fn(),
+      signUp: jest.fn(),
+      signOut: jest.fn(),
+    },
+    from: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      insert: jest.fn().mockReturnThis(),
+      update: jest.fn().mockReturnThis(),
+      delete: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      order: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      single: jest.fn(),
+    })),
+    rpc: jest.fn(),
+  })),
+}))
+
+// Mock Stripe
+jest.mock('@stripe/stripe-js', () => ({
+  loadStripe: jest.fn(() => Promise.resolve({
+    elements: jest.fn(),
+    confirmPayment: jest.fn(),
+    retrievePaymentIntent: jest.fn(),
+  })),
+}))
+
+// Mock IntersectionObserver
+global.IntersectionObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Mock ResizeObserver
+global.ResizeObserver = jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
+}))
+
+// Mock WebSocket for real-time features
+global.WebSocket = jest.fn().mockImplementation(() => ({
+  addEventListener: jest.fn(),
+  removeEventListener: jest.fn(),
+  send: jest.fn(),
+  close: jest.fn(),
+  readyState: 1,
+}))
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: jest.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  })),
+})
+
+// Setup testing utilities
+beforeEach(() => {
+  fetchMock.resetMocks()
+  jest.clearAllMocks()
+})
+```
+
+```json
+// playwright.config.ts (E2E Testing Configuration)
+import { defineConfig, devices } from '@playwright/test'
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: [
+    ['html'],
+    ['junit', { outputFile: 'test-results/junit.xml' }],
+    ['json', { outputFile: 'test-results/results.json' }],
+  ],
+  use: {
+    baseURL: process.env.PLAYWRIGHT_TEST_BASE_URL || 'http://localhost:3000',
+    trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: 'retain-on-failure',
+  },
+
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
+    },
+    {
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
+    },
+    {
+      name: 'Mobile Chrome',
+      use: { ...devices['Pixel 5'] },
+    },
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 12'] },
+    },
+  ],
+
+  webServer: {
+    command: 'npm run dev',
+    url: 'http://127.0.0.1:3000',
+    reuseExistingServer: !process.env.CI,
+  },
+})
+```
+
+### STEP 2: Unit Testing Suite
+**Timeline:** Day 1 Afternoon to Day 2 Morning
+**Files:** Critical component and utility tests
+
+```typescript
+// __tests__/lib/auth.test.ts (Authentication Testing)
+import { describe, it, expect, jest, beforeEach } from '@jest/globals'
+import { AuthService } from '@/lib/auth'
+import { createClient } from '@/lib/supabase'
+
+// Mock Supabase client
+jest.mock('@/lib/supabase')
+const mockSupabase = createClient as jest.MockedFunction<typeof createClient>
+
+describe('AuthService', () => {
+  let authService: AuthService
+  let mockClient: any
+
+  beforeEach(() => {
+    mockClient = {
+      auth: {
+        signInWithPassword: jest.fn(),
+        signUp: jest.fn(),
+        signOut: jest.fn(),
+        getUser: jest.fn(),
+      },
+      from: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn(),
+        insert: jest.fn(),
+        update: jest.fn(),
+      })),
+    }
+    mockSupabase.mockReturnValue(mockClient)
+    authService = new AuthService()
+  })
+
+  describe('signIn', () => {
+    it('should sign in successfully with valid credentials', async () => {
+      const mockUser = { id: '123', email: 'test@example.com' }
+      mockClient.auth.signInWithPassword.mockResolvedValue({
+        data: { user: mockUser },
+        error: null,
+      })
+
+      const result = await authService.signIn('test@example.com', 'password123')
+
+      expect(result.success).toBe(true)
+      expect(result.user).toEqual(mockUser)
+      expect(mockClient.auth.signInWithPassword).toHaveBeenCalledWith({
+        email: 'test@example.com',
+        password: 'password123',
+      })
+    })
+
+    it('should handle sign in errors', async () => {
+      mockClient.auth.signInWithPassword.mockResolvedValue({
+        data: { user: null },
+        error: { message: 'Invalid credentials' },
+      })
+
+      const result = await authService.signIn('test@example.com', 'wrongpassword')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toBe('Invalid credentials')
+    })
+
+    it('should validate email format', async () => {
+      const result = await authService.signIn('invalid-email', 'password123')
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('email')
+    })
+  })
+
+  describe('signUp', () => {
+    it('should create new user account', async () => {
+      const mockUser = { id: '123', email: 'newuser@example.com' }
+      mockClient.auth.signUp.mockResolvedValue({
+        data: { user: mockUser },
+        error: null,
+      })
+
+      const userData = {
+        email: 'newuser@example.com',
+        password: 'password123',
+        fullName: 'New User',
+        role: 'homeowner' as const,
+      }
+
+      const result = await authService.signUp(userData)
+
+      expect(result.success).toBe(true)
+      expect(result.user).toEqual(mockUser)
+    })
+  })
+})
+```
+
+```typescript
+// __tests__/lib/services/paymentService.test.ts (Payment Service Testing)
+import { describe, it, expect, jest, beforeEach } from '@jest/globals'
+import { PaymentService } from '@/lib/services/paymentService'
+import Stripe from 'stripe'
+
+// Mock Stripe
+jest.mock('stripe')
+const MockStripe = Stripe as jest.MockedClass<typeof Stripe>
+
+describe('PaymentService', () => {
+  let paymentService: PaymentService
+  let mockStripe: jest.Mocked<Stripe>
+
+  beforeEach(() => {
+    mockStripe = {
+      paymentIntents: {
+        create: jest.fn(),
+        retrieve: jest.fn(),
+        confirm: jest.fn(),
+      },
+      customers: {
+        create: jest.fn(),
+        retrieve: jest.fn(),
+      },
+      prices: {
+        list: jest.fn(),
+      },
+    } as any
+
+    MockStripe.mockImplementation(() => mockStripe)
+    paymentService = new PaymentService()
+  })
+
+  describe('createPaymentIntent', () => {
+    it('should create payment intent successfully', async () => {
+      const mockPaymentIntent = {
+        id: 'pi_test123',
+        client_secret: 'pi_test123_secret',
+        amount: 5000,
+        currency: 'aud',
+        status: 'requires_payment_method',
+      }
+
+      mockStripe.paymentIntents.create.mockResolvedValue(mockPaymentIntent as any)
+
+      const result = await paymentService.createPaymentIntent({
+        amount: 5000,
+        currency: 'aud',
+        description: 'Solar quote unlock',
+        userId: 'user123',
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.data?.client_secret).toBe('pi_test123_secret')
+      expect(mockStripe.paymentIntents.create).toHaveBeenCalledWith({
+        amount: 5000,
+        currency: 'aud',
+        description: 'Solar quote unlock',
+        metadata: {
+          userId: 'user123',
+        },
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+    })
+
+    it('should handle payment intent creation errors', async () => {
+      mockStripe.paymentIntents.create.mockRejectedValue(
+        new Error('Payment processing error')
+      )
+
+      const result = await paymentService.createPaymentIntent({
+        amount: 5000,
+        currency: 'aud',
+        description: 'Test payment',
+        userId: 'user123',
+      })
+
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('Payment processing error')
+    })
+  })
+
+  describe('validatePayment', () => {
+    it('should validate successful payment', async () => {
+      const mockPaymentIntent = {
+        id: 'pi_test123',
+        status: 'succeeded',
+        amount: 5000,
+        currency: 'aud',
+      }
+
+      mockStripe.paymentIntents.retrieve.mockResolvedValue(mockPaymentIntent as any)
+
+      const result = await paymentService.validatePayment('pi_test123')
+
+      expect(result.isValid).toBe(true)
+      expect(result.amount).toBe(5000)
+    })
+  })
+})
+```
+
+```typescript
+// __tests__/components/InstantQuoteForm.test.tsx (Component Testing)
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { InstantQuoteForm } from '@/components/InstantQuoteForm'
+
+// Mock form submission
+const mockOnSubmit = jest.fn()
+
+describe('InstantQuoteForm', () => {
+  beforeEach(() => {
+    mockOnSubmit.mockClear()
+  })
+
+  it('renders all form fields', () => {
+    render(<InstantQuoteForm onSubmit={mockOnSubmit} />)
+
+    expect(screen.getByLabelText(/property address/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/postcode/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/annual electricity usage/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/roof type/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /get instant quote/i })).toBeInTheDocument()
+  })
+
+  it('validates required fields', async () => {
+    const user = userEvent.setup()
+    render(<InstantQuoteForm onSubmit={mockOnSubmit} />)
+
+    const submitButton = screen.getByRole('button', { name: /get instant quote/i })
+    await user.click(submitButton)
+
+    expect(screen.getByText(/property address is required/i)).toBeInTheDocument()
+    expect(screen.getByText(/postcode is required/i)).toBeInTheDocument()
+    expect(mockOnSubmit).not.toHaveBeenCalled()
+  })
+
+  it('validates postcode format', async () => {
+    const user = userEvent.setup()
+    render(<InstantQuoteForm onSubmit={mockOnSubmit} />)
+
+    const postcodeInput = screen.getByLabelText(/postcode/i)
+    await user.type(postcodeInput, '12345')
+
+    const submitButton = screen.getByRole('button', { name: /get instant quote/i })
+    await user.click(submitButton)
+
+    expect(screen.getByText(/please enter a valid australian postcode/i)).toBeInTheDocument()
+  })
+
+  it('submits form with valid data', async () => {
+    const user = userEvent.setup()
+    render(<InstantQuoteForm onSubmit={mockOnSubmit} />)
+
+    // Fill out form
+    await user.type(screen.getByLabelText(/property address/i), '123 Main St, Sydney NSW')
+    await user.type(screen.getByLabelText(/postcode/i), '2000')
+    await user.type(screen.getByLabelText(/annual electricity usage/i), '8000')
+    await user.selectOptions(screen.getByLabelText(/roof type/i), 'tile')
+
+    const submitButton = screen.getByRole('button', { name: /get instant quote/i })
+    await user.click(submitButton)
+
+    await waitFor(() => {
+      expect(mockOnSubmit).toHaveBeenCalledWith({
+        propertyAddress: '123 Main St, Sydney NSW',
+        postcode: '2000',
+        annualUsage: 8000,
+        roofType: 'tile',
+      })
+    })
+  })
+
+  it('calculates system size recommendation', async () => {
+    const user = userEvent.setup()
+    render(<InstantQuoteForm onSubmit={mockOnSubmit} />)
+
+    const usageInput = screen.getByLabelText(/annual electricity usage/i)
+    await user.type(usageInput, '6000')
+
+    // Should show calculated system size
+    await waitFor(() => {
+      expect(screen.getByText(/recommended system size/i)).toBeInTheDocument()
+      expect(screen.getByText(/4.0kW/i)).toBeInTheDocument()
+    })
+  })
+})
+```
+
+### STEP 3: API Integration Testing
+**Timeline:** Day 2 Afternoon
+**Files:** API route testing
+
+```typescript
+// __tests__/api/quotes/create.test.ts (API Route Testing)
+import { createMocks } from 'node-mocks-http'
+import handler from '@/app/api/quotes/create/route'
+import { createClient } from '@/lib/supabase'
+
+jest.mock('@/lib/supabase')
+
+describe('/api/quotes/create', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  it('creates a new quote successfully', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: jest.fn().mockResolvedValue({
+          data: { user: { id: 'user123' } },
+          error: null,
+        }),
+      },
+      from: jest.fn(() => ({
+        insert: jest.fn().mockResolvedValue({
+          data: [{ id: 'quote123', user_id: 'user123' }],
+          error: null,
+        }),
+      })),
+    }
+
+    ;(createClient as jest.Mock).mockReturnValue(mockSupabase)
+
+    const { req, res } = createMocks({
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer valid-token',
+        'content-type': 'application/json',
+      },
+      body: {
+        propertyAddress: '123 Main St, Sydney NSW 2000',
+        postcode: '2000',
+        annualUsage: 8000,
+        roofType: 'tile',
+        systemSize: 5.5,
+      },
+    })
+
+    await handler(req, res)
+
+    expect(res._getStatusCode()).toBe(201)
+    const data = JSON.parse(res._getData())
+    expect(data.quote.id).toBe('quote123')
+  })
+
+  it('validates required fields', async () => {
+    const { req, res } = createMocks({
+      method: 'POST',
+      headers: {
+        'authorization': 'Bearer valid-token',
+        'content-type': 'application/json',
+      },
+      body: {
+        // Missing required fields
+        propertyAddress: '',
+      },
+    })
+
+    await handler(req, res)
+
+    expect(res._getStatusCode()).toBe(400)
+    const data = JSON.parse(res._getData())
+    expect(data.error).toContain('validation')
+  })
+
+  it('requires authentication', async () => {
+    const { req, res } = createMocks({
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: {
+        propertyAddress: '123 Main St',
+        postcode: '2000',
+      },
+    })
+
+    await handler(req, res)
+
+    expect(res._getStatusCode()).toBe(401)
+  })
+})
+```
+
+```typescript
+// __tests__/api/payments/webhook.test.ts (Webhook Testing)
+import { createMocks } from 'node-mocks-http'
+import handler from '@/app/api/stripe/webhook/route'
+import Stripe from 'stripe'
+
+jest.mock('stripe')
+
+describe('/api/stripe/webhook', () => {
+  const mockStripe = {
+    webhooks: {
+      constructEvent: jest.fn(),
+    },
+  } as any
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    ;(Stripe as jest.MockedClass<typeof Stripe>).mockImplementation(() => mockStripe)
+  })
+
+  it('processes payment_intent.succeeded event', async () => {
+    const mockEvent = {
+      id: 'evt_test123',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_test123',
+          amount: 5000,
+          currency: 'aud',
+          metadata: {
+            userId: 'user123',
+            quoteId: 'quote123',
+          },
+        },
+      },
+    }
+
+    mockStripe.webhooks.constructEvent.mockReturnValue(mockEvent)
+
+    const { req, res } = createMocks({
+      method: 'POST',
+      headers: {
+        'stripe-signature': 'test-signature',
+      },
+      body: JSON.stringify(mockEvent),
+    })
+
+    await handler(req, res)
+
+    expect(res._getStatusCode()).toBe(200)
+    expect(mockStripe.webhooks.constructEvent).toHaveBeenCalled()
+  })
+
+  it('handles invalid webhook signature', async () => {
+    mockStripe.webhooks.constructEvent.mockImplementation(() => {
+      throw new Error('Invalid signature')
+    })
+
+    const { req, res } = createMocks({
+      method: 'POST',
+      headers: {
+        'stripe-signature': 'invalid-signature',
+      },
+      body: 'invalid-body',
+    })
+
+    await handler(req, res)
+
+    expect(res._getStatusCode()).toBe(400)
+  })
+})
+```
+
+### STEP 4: End-to-End Testing
+**Timeline:** Day 2 Evening to Day 3 Morning
+**Files:** E2E test scenarios
+
+```typescript
+// e2e/user-journey.spec.ts (Complete User Journey Testing)
+import { test, expect } from '@playwright/test'
+
+test.describe('Complete User Journey', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/')
+  })
+
+  test('homeowner can create account and request quote', async ({ page }) => {
+    // Navigate to signup
+    await page.click('text="Get Started"')
+    await page.click('text="I\'m a Homeowner"')
+
+    // Fill signup form
+    await page.fill('[data-testid="email"]', 'test@example.com')
+    await page.fill('[data-testid="password"]', 'TestPassword123!')
+    await page.fill('[data-testid="fullName"]', 'Test User')
+    await page.fill('[data-testid="phone"]', '0412345678')
+    
+    await page.click('[data-testid="signup-submit"]')
+
+    // Should redirect to dashboard
+    await expect(page).toHaveURL('/homeowner/dashboard')
+    await expect(page.locator('h1')).toContainText('Welcome')
+
+    // Create new quote
+    await page.click('text="Request New Quote"')
+    
+    await page.fill('[data-testid="property-address"]', '123 Main Street, Sydney NSW')
+    await page.fill('[data-testid="postcode"]', '2000')
+    await page.fill('[data-testid="annual-usage"]', '8000')
+    await page.selectOption('[data-testid="roof-type"]', 'tile')
+    
+    await page.click('[data-testid="create-quote"]')
+
+    // Should show quote created confirmation
+    await expect(page.locator('[data-testid="success-message"]')).toBeVisible()
+    await expect(page.locator('[data-testid="quote-id"]')).toBeVisible()
+
+    // Navigate to quotes list
+    await page.click('text="My Quotes"')
+    await expect(page.locator('[data-testid="quote-card"]')).toBeVisible()
+  })
+
+  test('installer can bid on quotes', async ({ page }) => {
+    // Login as installer
+    await page.goto('/login')
+    await page.fill('[data-testid="email"]', 'installer@example.com')
+    await page.fill('[data-testid="password"]', 'TestPassword123!')
+    await page.click('[data-testid="login-submit"]')
+
+    // Should redirect to installer dashboard
+    await expect(page).toHaveURL('/installer/dashboard')
+
+    // Navigate to available quotes
+    await page.click('text="Browse Quotes"')
+    await expect(page.locator('[data-testid="quote-card"]')).toBeVisible()
+
+    // Submit a bid
+    await page.click('[data-testid="bid-button"]').first()
+    
+    await page.fill('[data-testid="bid-amount"]', '12000')
+    await page.fill('[data-testid="system-size"]', '6.6')
+    await page.selectOption('[data-testid="panel-brand"]', 'Jinko')
+    await page.selectOption('[data-testid="inverter-brand"]', 'Fronius')
+    await page.fill('[data-testid="warranty-years"]', '25')
+    await page.fill('[data-testid="installation-timeline"]', '4-6 weeks')
+    
+    await page.click('[data-testid="submit-bid"]')
+
+    // Should show bid submitted confirmation
+    await expect(page.locator('[data-testid="bid-success"]')).toBeVisible()
+  })
+
+  test('payment flow works correctly', async ({ page }) => {
+    // Setup test user with existing quote
+    await page.goto('/homeowner/dashboard')
+    await page.click('[data-testid="quote-card"]').first()
+    
+    // Should see bids available
+    await expect(page.locator('[data-testid="bid-card"]')).toBeVisible()
+
+    // Click unlock bids
+    await page.click('[data-testid="unlock-bids"]')
+
+    // Should navigate to payment page
+    await expect(page).toHaveURL(/\/payments\//)
+
+    // Fill payment form (using Stripe test card)
+    await page.fill('[data-testid="card-number"]', '4242424242424242')
+    await page.fill('[data-testid="card-expiry"]', '12/34')
+    await page.fill('[data-testid="card-cvc"]', '123')
+    await page.fill('[data-testid="cardholder-name"]', 'Test User')
+
+    await page.click('[data-testid="pay-button"]')
+
+    // Should show payment success
+    await expect(page.locator('[data-testid="payment-success"]')).toBeVisible()
+
+    // Should redirect back to quote with unlocked bids
+    await expect(page.locator('[data-testid="installer-contact"]')).toBeVisible()
+  })
+
+  test('real-time chat works', async ({ page, context }) => {
+    // Open two pages (homeowner and installer)
+    const homeownerPage = page
+    const installerPage = await context.newPage()
+
+    // Login homeowner
+    await homeownerPage.goto('/homeowner/dashboard')
+    await homeownerPage.click('[data-testid="quote-card"]').first()
+    
+    // Login installer in second page
+    await installerPage.goto('/login')
+    await installerPage.fill('[data-testid="email"]', 'installer@example.com')
+    await installerPage.fill('[data-testid="password"]', 'TestPassword123!')
+    await installerPage.click('[data-testid="login-submit"]')
+
+    // Navigate to same quote
+    await installerPage.goto('/installer/quotes/test-quote-id')
+
+    // Start chat from homeowner side
+    await homeownerPage.click('[data-testid="start-chat"]')
+    await homeownerPage.fill('[data-testid="chat-input"]', 'Hello, I have questions about the installation')
+    await homeownerPage.click('[data-testid="send-message"]')
+
+    // Should see message appear in installer chat
+    await expect(installerPage.locator('[data-testid="chat-message"]')).toContainText('Hello, I have questions')
+
+    // Reply from installer
+    await installerPage.fill('[data-testid="chat-input"]', 'Hi! I\'d be happy to help')
+    await installerPage.click('[data-testid="send-message"]')
+
+    // Should see reply in homeowner chat
+    await expect(homeownerPage.locator('[data-testid="chat-message"]').last()).toContainText('happy to help')
+  })
+
+  test('admin panel access and functionality', async ({ page }) => {
+    // Login as admin
+    await page.goto('/login')
+    await page.fill('[data-testid="email"]', 'admin@example.com')
+    await page.fill('[data-testid="password"]', 'AdminPassword123!')
+    await page.click('[data-testid="login-submit"]')
+
+    // Should redirect to admin dashboard
+    await expect(page).toHaveURL('/admin/dashboard')
+
+    // Check key metrics are displayed
+    await expect(page.locator('[data-testid="total-users"]')).toBeVisible()
+    await expect(page.locator('[data-testid="active-quotes"]')).toBeVisible()
+    await expect(page.locator('[data-testid="monthly-revenue"]')).toBeVisible()
+
+    // Test user management
+    await page.click('text="Users"')
+    await expect(page.locator('[data-testid="users-table"]')).toBeVisible()
+
+    // Search for user
+    await page.fill('[data-testid="user-search"]', 'test@example.com')
+    await page.click('[data-testid="search-button"]')
+    await expect(page.locator('[data-testid="user-row"]')).toBeVisible()
+
+    // Test quote management
+    await page.click('text="Quotes"')
+    await expect(page.locator('[data-testid="quotes-table"]')).toBeVisible()
+  })
+})
+```
+
+```typescript
+// e2e/mobile-responsive.spec.ts (Mobile Testing)
+import { test, expect, devices } from '@playwright/test'
+
+test.use({ ...devices['iPhone 12'] })
+
+test.describe('Mobile Responsiveness', () => {
+  test('homepage is mobile responsive', async ({ page }) => {
+    await page.goto('/')
+    
+    // Check mobile navigation
+    await expect(page.locator('[data-testid="mobile-menu-button"]')).toBeVisible()
+    
+    // Check hero section fits mobile
+    const heroSection = page.locator('[data-testid="hero-section"]')
+    await expect(heroSection).toBeVisible()
+    
+    const heroBox = await heroSection.boundingBox()
+    expect(heroBox?.width).toBeLessThanOrEqual(390) // iPhone 12 width
+  })
+
+  test('quote form works on mobile', async ({ page }) => {
+    await page.goto('/request-quote')
+    
+    // Form should be accessible and usable
+    await page.fill('[data-testid="property-address"]', '123 Mobile St')
+    await page.fill('[data-testid="postcode"]', '2000')
+    
+    // Scroll to ensure all fields are visible
+    await page.locator('[data-testid="annual-usage"]').scrollIntoViewIfNeeded()
+    await page.fill('[data-testid="annual-usage"]', '8000')
+    
+    await page.click('[data-testid="submit-quote"]')
+    
+    // Should handle mobile form submission
+    await expect(page.locator('[data-testid="success-message"]')).toBeVisible()
+  })
+
+  test('dashboard navigation works on mobile', async ({ page }) => {
+    await page.goto('/homeowner/dashboard')
+    
+    // Mobile navigation should work
+    await page.click('[data-testid="mobile-menu"]')
+    await expect(page.locator('[data-testid="nav-menu"]')).toBeVisible()
+    
+    await page.click('text="My Quotes"')
+    await expect(page).toHaveURL('/homeowner/quotes')
+  })
+})
+```
+
+### STEP 5: Performance and Load Testing
+**Timeline:** Day 3 Afternoon
+**Files:** Performance testing suite
+
+```typescript
+// performance/load-test.js (Load Testing with k6)
+import http from 'k6/http'
+import { check, sleep } from 'k6'
+import { Rate } from 'k6/metrics'
+
+export let errorRate = new Rate('errors')
+
+export let options = {
+  stages: [
+    { duration: '2m', target: 100 }, // Ramp up to 100 users
+    { duration: '5m', target: 100 }, // Stay at 100 users
+    { duration: '2m', target: 200 }, // Ramp up to 200 users
+    { duration: '5m', target: 200 }, // Stay at 200 users
+    { duration: '2m', target: 0 },   // Ramp down to 0 users
+  ],
+  thresholds: {
+    http_req_duration: ['p(99)<1500'], // 99% of requests must complete below 1.5s
+    errors: ['rate<0.1'], // Error rate must be below 10%
+  },
+}
+
+const BASE_URL = 'https://your-domain.com'
+
+export default function() {
+  // Test homepage
+  let homeResponse = http.get(`${BASE_URL}/`)
+  check(homeResponse, {
+    'homepage status is 200': (r) => r.status === 200,
+    'homepage loads in <2s': (r) => r.timings.duration < 2000,
+  }) || errorRate.add(1)
+
+  sleep(1)
+
+  // Test API endpoints
+  let apiResponse = http.get(`${BASE_URL}/api/health`)
+  check(apiResponse, {
+    'health check status is 200': (r) => r.status === 200,
+    'health check loads in <1s': (r) => r.timings.duration < 1000,
+  }) || errorRate.add(1)
+
+  // Test quote creation (requires auth)
+  let authResponse = http.post(`${BASE_URL}/api/auth/signin`, {
+    email: 'test@example.com',
+    password: 'TestPassword123!',
+  })
+
+  if (authResponse.status === 200) {
+    let token = authResponse.json('access_token')
+    
+    let quoteResponse = http.post(`${BASE_URL}/api/quotes/create`, 
+      JSON.stringify({
+        propertyAddress: '123 Load Test St',
+        postcode: '2000',
+        annualUsage: 8000,
+        roofType: 'tile',
+      }),
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+      }
+    )
+
+    check(quoteResponse, {
+      'quote creation status is 201': (r) => r.status === 201,
+      'quote creation loads in <3s': (r) => r.timings.duration < 3000,
+    }) || errorRate.add(1)
+  }
+
+  sleep(2)
+}
+```
+
+```typescript
+// performance/lighthouse-test.js (Lighthouse Performance Testing)
+const lighthouse = require('lighthouse')
+const chromeLauncher = require('chrome-launcher')
+const fs = require('fs')
+
+async function runLighthouse(url) {
+  const chrome = await chromeLauncher.launch({ chromeFlags: ['--headless'] })
+  const options = {
+    logLevel: 'info',
+    output: 'json',
+    onlyCategories: ['performance', 'accessibility', 'best-practices', 'seo'],
+    port: chrome.port,
+  }
+
+  const runnerResult = await lighthouse(url, options)
+  await chrome.kill()
+
+  return runnerResult
+}
+
+async function testPerformance() {
+  const urls = [
+    'https://your-domain.com/',
+    'https://your-domain.com/request-quote',
+    'https://your-domain.com/homeowner/dashboard',
+    'https://your-domain.com/installer/dashboard',
+  ]
+
+  const results = []
+
+  for (const url of urls) {
+    console.log(`Testing ${url}...`)
+    const result = await runLighthouse(url)
+    
+    const scores = {
+      url,
+      performance: result.lhr.categories.performance.score * 100,
+      accessibility: result.lhr.categories.accessibility.score * 100,
+      bestPractices: result.lhr.categories['best-practices'].score * 100,
+      seo: result.lhr.categories.seo.score * 100,
+    }
+
+    results.push(scores)
+    console.log(`Performance: ${scores.performance}`)
+    console.log(`Accessibility: ${scores.accessibility}`)
+    console.log(`Best Practices: ${scores.bestPractices}`)
+    console.log(`SEO: ${scores.seo}`)
+    console.log('---')
+  }
+
+  // Save results
+  fs.writeFileSync('lighthouse-results.json', JSON.stringify(results, null, 2))
+
+  // Check if scores meet thresholds
+  const failedTests = results.filter(result => 
+    result.performance < 90 || 
+    result.accessibility < 95 || 
+    result.bestPractices < 90 || 
+    result.seo < 95
+  )
+
+  if (failedTests.length > 0) {
+    console.error('Performance tests failed for:', failedTests.map(t => t.url))
+    process.exit(1)
+  } else {
+    console.log('All performance tests passed!')
+  }
+}
+
+testPerformance().catch(console.error)
+```
+
+### STEP 6: Security Testing
+**Timeline:** Day 3 Evening to Day 4
+**Files:** Security validation tests
+
+```typescript
+// security/security-tests.spec.ts (Security Testing Suite)
+import { test, expect } from '@playwright/test'
+
+test.describe('Security Tests', () => {
+  test('SQL injection protection', async ({ page }) => {
+    // Test SQL injection in search parameters
+    const maliciousInputs = [
+      "'; DROP TABLE users; --",
+      "1' OR '1'='1",
+      "admin'/*",
+      "' UNION SELECT * FROM users --",
+    ]
+
+    for (const input of maliciousInputs) {
+      const response = await page.request.get(`/api/quotes/search?q=${encodeURIComponent(input)}`)
+      
+      // Should not return database errors or unauthorized data
+      expect(response.status()).not.toBe(500)
+      
+      const body = await response.text()
+      expect(body.toLowerCase()).not.toContain('error')
+      expect(body.toLowerCase()).not.toContain('mysql')
+      expect(body.toLowerCase()).not.toContain('postgresql')
+    }
+  })
+
+  test('XSS protection', async ({ page }) => {
+    await page.goto('/request-quote')
+    
+    const xssPayloads = [
+      '<script>alert("xss")</script>',
+      '<img src="x" onerror="alert(1)">',
+      'javascript:alert("xss")',
+      '<svg onload="alert(1)">',
+    ]
+
+    for (const payload of xssPayloads) {
+      await page.fill('[data-testid="property-address"]', payload)
+      await page.click('[data-testid="submit-quote"]')
+      
+      // Check that script didn't execute
+      const dialogs = []
+      page.on('dialog', dialog => {
+        dialogs.push(dialog.message())
+        dialog.dismiss()
+      })
+      
+      await page.waitForTimeout(1000)
+      expect(dialogs).toHaveLength(0)
+    }
+  })
+
+  test('authentication required for protected routes', async ({ page }) => {
+    const protectedRoutes = [
+      '/homeowner/dashboard',
+      '/installer/dashboard',
+      '/admin/dashboard',
+      '/api/quotes/create',
+      '/api/payments/create-intent',
+    ]
+
+    for (const route of protectedRoutes) {
+      const response = await page.request.get(route)
+      expect([401, 403, 302]).toContain(response.status())
+    }
+  })
+
+  test('CSRF protection', async ({ page }) => {
+    // Try to submit form without CSRF token
+    const response = await page.request.post('/api/quotes/create', {
+      data: {
+        propertyAddress: '123 Test St',
+        postcode: '2000',
+      },
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+
+    expect(response.status()).toBe(403)
+  })
+
+  test('rate limiting', async ({ page }) => {
+    // Make multiple rapid requests
+    const promises = []
+    for (let i = 0; i < 100; i++) {
+      promises.push(page.request.get('/api/quotes/search?q=test'))
+    }
+
+    const responses = await Promise.all(promises)
+    const rateLimitedResponses = responses.filter(r => r.status() === 429)
+    
+    // Should have some rate limited responses
+    expect(rateLimitedResponses.length).toBeGreaterThan(0)
+  })
+
+  test('secure headers present', async ({ page }) => {
+    const response = await page.request.get('/')
+    const headers = response.headers()
+
+    expect(headers['x-frame-options']).toBe('DENY')
+    expect(headers['x-content-type-options']).toBe('nosniff')
+    expect(headers['referrer-policy']).toBe('origin-when-cross-origin')
+    expect(headers['content-security-policy']).toContain("default-src 'self'")
+  })
+
+  test('sensitive data not exposed', async ({ page }) => {
+    const response = await page.request.get('/')
+    const body = await response.text()
+    
+    // Check that sensitive keys/secrets are not exposed
+    expect(body).not.toContain('sk_live_')
+    expect(body).not.toContain('sk_test_')
+    expect(body).not.toContain('service_role')
+    expect(body).not.toContain('DATABASE_URL')
+  })
+})
+```
+
+### STEP 7: Final Integration Validation
+**Timeline:** Day 4
+**Files:** Complete system validation
+
+```typescript
+// integration/system-integration.test.ts (System Integration Testing)
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals'
+import { createClient } from '@/lib/supabase'
+import { PaymentService } from '@/lib/services/paymentService'
+import { AIAssistantService } from '@/lib/services/aiAssistantService'
+import { BiddingService } from '@/lib/services/biddingService'
+
+describe('System Integration Tests', () => {
+  let supabase: any
+  let paymentService: PaymentService
+  let aiService: AIAssistantService
+  let biddingService: BiddingService
+
+  beforeAll(async () => {
+    supabase = createClient()
+    paymentService = new PaymentService()
+    aiService = new AIAssistantService()
+    biddingService = new BiddingService()
+  })
+
+  describe('Complete Quote-to-Payment Flow', () => {
+    it('should handle complete user journey', async () => {
+      // 1. Create test user
+      const { data: user, error: userError } = await supabase.auth.signUp({
+        email: 'integration-test@example.com',
+        password: 'TestPassword123!',
+      })
+      expect(userError).toBeNull()
+      expect(user).toBeTruthy()
+
+      // 2. Create quote
+      const { data: quote, error: quoteError } = await supabase
+        .from('solar_quotes')
+        .insert({
+          user_id: user.user.id,
+          property_address: '123 Integration Test St, Sydney NSW 2000',
+          postcode: '2000',
+          annual_usage: 8000,
+          roof_type: 'tile',
+          system_size: 6.6,
+          status: 'active',
+        })
+        .select()
+        .single()
+
+      expect(quoteError).toBeNull()
+      expect(quote.id).toBeTruthy()
+
+      // 3. Create installer bids
+      const installerBids = []
+      for (let i = 0; i < 3; i++) {
+        const { data: bid } = await biddingService.submitBid({
+          quoteId: quote.id,
+          installerId: `installer-${i}`,
+          amount: 12000 + (i * 1000),
+          systemSize: 6.6,
+          panelBrand: 'Jinko',
+          inverterBrand: 'Fronius',
+          warrantyYears: 25,
+        })
+        installerBids.push(bid)
+      }
+
+      expect(installerBids).toHaveLength(3)
+
+      // 4. Process payment for quote unlock
+      const paymentIntent = await paymentService.createPaymentIntent({
+        amount: 5000, // $50 AUD
+        currency: 'aud',
+        description: 'Quote unlock',
+        userId: user.user.id,
+        metadata: { quoteId: quote.id },
+      })
+
+      expect(paymentIntent.success).toBe(true)
+      expect(paymentIntent.data?.client_secret).toBeTruthy()
+
+      // 5. Simulate successful payment
+      await paymentService.handleWebhookEvent({
+        type: 'payment_intent.succeeded',
+        data: {
+          object: {
+            id: paymentIntent.data.id,
+            status: 'succeeded',
+            metadata: { quoteId: quote.id, userId: user.user.id },
+          },
+        },
+      })
+
+      // 6. Verify quote is unlocked
+      const { data: updatedQuote } = await supabase
+        .from('solar_quotes')
+        .select('status, payment_status')
+        .eq('id', quote.id)
+        .single()
+
+      expect(updatedQuote.payment_status).toBe('paid')
+
+      // 7. Test AI assistant with context
+      const aiResponse = await aiService.chat(
+        'Analyze this quote for me',
+        {
+          userType: 'homeowner',
+          userId: user.user.id,
+          currentQuote: quote,
+        }
+      )
+
+      expect(aiResponse.message).toContain('quote')
+      expect(aiResponse.type).toBe('analysis')
+
+      // Cleanup
+      await supabase.auth.signOut()
+    }, 30000) // 30 second timeout for integration test
+  })
+
+  describe('Real-time Features Integration', () => {
+    it('should handle real-time chat and notifications', async () => {
+      // This would test WebSocket connections and real-time updates
+      // Implementation depends on specific real-time requirements
+    })
+  })
+
+  describe('Data Consistency', () => {
+    it('should maintain data integrity across services', async () => {
+      // Test that related data remains consistent
+      const { data: quotes } = await supabase
+        .from('solar_quotes')
+        .select(`
+          *,
+          quote_versions(*),
+          bidding_rounds(*)
+        `)
+        .limit(10)
+
+      for (const quote of quotes) {
+        // Verify each quote has consistent version data
+        if (quote.quote_versions.length > 0) {
+          const currentVersion = quote.quote_versions.find(v => v.is_current)
+          expect(currentVersion).toBeTruthy()
+        }
+
+        // Verify bidding rounds are properly linked
+        for (const round of quote.bidding_rounds) {
+          expect(round.quote_id).toBe(quote.id)
+        }
+      }
+    })
+  })
+})
+```
+
+---
+
+## ✅ VERIFICATION CHECKLIST
+
+### Unit Testing:
+- [ ] Authentication service tests passing
+- [ ] Payment service tests comprehensive
+- [ ] Component rendering and interaction tests
+- [ ] Utility function tests covering edge cases
+- [ ] Code coverage above 70% threshold
+
+### Integration Testing:
+- [ ] API routes properly tested
+- [ ] Database operations validated
+- [ ] External service integrations working
+- [ ] Webhook processing tested
+
+### End-to-End Testing:
+- [ ] Complete user journeys functional
+- [ ] Cross-browser compatibility verified
+- [ ] Mobile responsiveness confirmed
+- [ ] Real-time features operational
+
+### Performance Testing:
+- [ ] Load testing shows acceptable performance
+- [ ] Lighthouse scores above thresholds
+- [ ] Core Web Vitals within targets
+- [ ] Database query performance optimized
+
+### Security Testing:
+- [ ] XSS protection verified
+- [ ] SQL injection prevention confirmed  
+- [ ] Authentication and authorization working
+- [ ] Rate limiting and CSRF protection active
+
+---
+
+## 🚨 PRODUCTION READINESS
+
+### Quality Gates:
+- [ ] All tests passing in CI/CD pipeline
+- [ ] Code coverage requirements met
+- [ ] Performance benchmarks achieved
+- [ ] Security vulnerabilities addressed
+
+### Documentation:
+- [ ] API documentation complete
+- [ ] User guides created
+- [ ] Admin documentation prepared
+- [ ] Deployment procedures documented
+
+### Monitoring:
+- [ ] Error tracking operational
+- [ ] Performance monitoring active
+- [ ] Business metrics tracked
+- [ ] Alerting systems configured
+
+---
+
+## 📈 LAUNCH PREPARATION
+
+After completing this execution plan:
+1. ✅ **Final Production Deployment** - Deploy to production environment
+2. ✅ **User Acceptance Testing** - Conduct final UAT with stakeholders  
+3. ✅ **Marketing Asset Preparation** - Prepare launch materials
+4. ✅ **Support Documentation** - Create customer support resources
+5. ✅ **Go-Live Planning** - Schedule coordinated production launch
+
+## 🎉 PROJECT COMPLETION STATUS
+
+**EXECUTION PLANS COMPLETED: 10/10**
+
+All execution plans have been successfully generated with comprehensive implementation details, verification checklists, and production considerations. The SolarMatch platform is now ready for systematic development and deployment following these detailed execution plans.
