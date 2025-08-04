@@ -5,9 +5,6 @@ import {
   Mic, 
   MicOff, 
   Download, 
-  ThumbsUp, 
-  Bookmark, 
-  Copy,
   MoreVertical,
   Minimize2,
   Maximize2,
@@ -17,16 +14,15 @@ import ChatMessage from './ChatMessage';
 import TypingIndicator from './TypingIndicator';
 import QuickActions from './QuickActions';
 import { useChatHistory } from '../../hooks/useChatHistory';
-import { useDeepseekAPI } from '../../hooks/useDeepseekAPI';
+import { useOpenAI } from '../../hooks/useOpenAI';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
 
 interface ChatWindowProps {
   isOpen: boolean;
   onClose: () => void;
-  onMinimize?: () => void;
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose, onMinimize }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose }) => {
   const [message, setMessage] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const [showQuickActions, setShowQuickActions] = useState(true);
@@ -35,7 +31,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose, onMinimize }) 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const { messages, addMessage, clearHistory, exportHistory } = useChatHistory();
-  const { sendMessage, isLoading, error } = useDeepseekAPI();
+  const { sendMessage, isLoading, error } = useOpenAI();
   const { 
     isListening, 
     transcript, 
@@ -79,17 +75,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose, onMinimize }) 
     setShowQuickActions(false);
 
     try {
-      const response = await sendMessage(message, messages);
+      const response = await sendMessage(message);
       
+      // Ensure aiMessage.content is a string
       const aiMessage = {
-        id: (Date.now() + 1).toString(),
-        content: response,
+        id: Date.now().toString(),
+        content: response || '', // Default to an empty string if null
         role: 'assistant' as const,
         timestamp: new Date()
       };
 
       addMessage(aiMessage);
-    } catch (err) {
+    } catch {
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         content: 'Sorry, I encountered an error. Please try again.',
@@ -229,9 +226,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose, onMinimize }) 
                 {isLoading && <TypingIndicator />}
                 
                 {error && (
-                  <div className="bg-red-500/20 border border-red-500/30 rounded-lg p-3">
-                    <p className="text-red-400 text-sm">⚠️ {error}</p>
-                  </div>
+                  <p className="text-red-400 text-sm">⚠️ {error}</p>
                 )}
                 
                 <div ref={messagesEndRef} />
