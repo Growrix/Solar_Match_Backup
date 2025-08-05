@@ -1,0 +1,365 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/lib/supabase'
+import { validateAIEnhancedChatRequest, moderateMessageContent, sanitizeChatMessage } from '@/lib/validation/chat'
+
+// Rate limiting map (in production, use Redis)
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
+
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
+
+// Debug log to check API key
+console.log('OPENAI_API_KEY available:', !!OPENAI_API_KEY)
+console.log('OPENAI_API_KEY format valid:', OPENAI_API_KEY?.startsWith('sk-') ? 'Yes' : 'No')
+
+export async function POST(request: NextRequest) {
+  try {
+    // Check if OpenAI API key is configured
+    if (!OPENAI_API_KEY || OPENAI_API_KEY === 'your_openai_api_key_here') {
+      console.error('OpenAI API key is not configured properly')
+      return NextResponse.json({
+        error: 'AI service is not configured. Please contact the administrator.',
+        details: 'OpenAI API key missing'
+      }, { status: 503 })
+    }
+
+    // 1. Authentication check
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      )
+    }
+
+    // 2. Rate limiting check
+    const userKey = user.id
+    const now = Date.now()
+    const windowMs = 60 * 1000 // 1 minute
+    const maxRequests = 10 // 10 requests per minute
+
+    const userLimit = rateLimitMap.get(userKey)
+    if (userLimit) {
+      if (now < userLimit.resetTime) {
+        if (userLimit.count >= maxRequests) {
+          return NextResponse.json(
+            { error: 'Rate limit exceeded. Try again later.' },
+            { status: 429 }
+          )
+        }
+        userLimit.count++
+      } else {
+        rateLimitMap.set(userKey, { count: 1, resetTime: now + windowMs })
+      }
+    } else {
+      rateLimitMap.set(userKey, { count: 1, resetTime: now + windowMs })
+    }
+
+    // 3. Input validation with enhanced schema
+    const body = await request.json()
+    
+    // Sanitize message content
+    if (body.message) {
+      body.message = sanitizeChatMessage(body.message)
+    }
+    
+    // Validate with enhanced schema
+    const validatedData = validateAIEnhancedChatRequest(body)
+
+    // 4. Enhanced context analysis
+    const enhancedContext = await buildEnhancedContext(user, validatedData.context)
+
+    // 5. Content moderation check
+    const moderationResult = moderateMessageContent(validatedData.message)
+    if (!moderationResult.isAppropriate) {
+      return NextResponse.json({
+        message: "I appreciate your message, but I'd like to keep our conversation focused on solar energy topics. How can I help you with your solar project?",
+        messageType: 'contextual_insight',
+        confidence: 1.0,
+        metadata: {
+          moderationReason: moderationResult.reason
+        }
+      })
+    }
+
+    // 6. Determine AI behavior based on message type and context
+    const aiSystemPrompt = buildContextualSystemPrompt(enhancedContext, validatedData.features)
+
+    // 7. Enhanced AI request with advanced features
+    const aiRequest = {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: aiSystemPrompt
+        },
+        // Include chat history if provided
+        ...(validatedData.chatHistory || []).map(msg => ({
+          role: msg.role,
+          content: msg.content
+        })),
+        {
+          role: 'user', 
+          content: validatedData.message
+        }
+      ],
+      max_tokens: 1200,
+      temperature: 0.7,
+    }
+
+    // 8. Call OpenAI API
+    try {
+      const aiResponse = await fetch(OPENAI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify(aiRequest),
+      })
+
+      if (!aiResponse.ok) {
+        const errorData = await aiResponse.json().catch(() => ({ error: 'Unknown error' }));
+        console.error('OpenAI API error:', aiResponse.status, errorData);
+        throw new Error(`OpenAI API error: ${aiResponse.status} - ${errorData.error || 'Unknown error'}`);
+      }
+
+      const aiData = await aiResponse.json()
+      console.log('OpenAI API response received:', !!aiData.choices?.[0]?.message?.content)
+
+      // 9. Enhanced response processing
+      const enhancedResponse = await processAIResponse(
+        aiData.choices[0].message.content,
+        enhancedContext,
+        validatedData.features
+      )
+
+      // 10. Log the interaction (optional - depends on database schema)
+      try {
+        await supabase.from('ai_interactions').insert({
+          user_id: user.id,
+          message: validatedData.message,
+          response: enhancedResponse.message,
+          context: validatedData.context,
+          message_type: enhancedResponse.messageType,
+          created_at: new Date().toISOString(),
+        })
+      } catch (logError) {
+        console.warn('Failed to log AI interaction:', logError)
+        // Don't fail the request if logging fails
+      }
+
+      // 11. Return enhanced response
+      return NextResponse.json(enhancedResponse)
+
+    } catch (openaiError) {
+      console.error('OpenAI API specific error:', openaiError)
+      return NextResponse.json({
+        error: 'Sorry, I encountered an error. Please try again.',
+        details: 'AI service temporarily unavailable'
+      }, { status: 503 })
+    }
+
+  } catch (error) {
+    console.error('AI chat error:', error)
+    
+    // Handle validation errors from our enhanced validation
+    if (error instanceof Error && error.message.includes('validation failed')) {
+      return NextResponse.json(
+        { error: 'Invalid input data', details: error.message },
+        { status: 400 }
+      )
+    }
+
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    )
+  }
+}
+
+// Handle preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    },
+  })
+}
+
+// Helper function to build enhanced context
+async function buildEnhancedContext(user: { id: string; user_metadata?: { user_type?: string } }, context?: Record<string, unknown>) {
+  
+  // Fetch user's recent quotes
+  const { data: recentQuotes } = await supabase
+    .from('solar_quotes')
+    .select('id, status, estimated_cost, system_size, property_type, created_at')
+    .eq('homeowner_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(5)
+
+  // Fetch user's active bids (if installer)
+  let activeBids: Array<{ quote_id: string; status: string; bid_amount: number }> = []
+  if (user.user_metadata?.user_type === 'installer') {
+    const { data: bids } = await supabase
+      .from('installer_lead_purchases')
+      .select('quote_id, status, bid_amount')
+      .eq('installer_id', user.id)
+      .eq('status', 'active')
+    activeBids = bids || []
+  }
+
+  return {
+    userType: user.user_metadata?.user_type || 'homeowner',
+    recentQuotes: recentQuotes || [],
+    activeBids,
+    currentContext: context,
+    userLocation: (context as Record<string, string>)?.state || 'Australia',
+    timestamp: new Date().toISOString()
+  }
+}
+
+// Build contextual system prompt
+function buildContextualSystemPrompt(
+  context: { 
+    userType: string; 
+    userLocation: string; 
+    recentQuotes: Array<Record<string, unknown>>; 
+    activeBids: Array<Record<string, unknown>> 
+  }, 
+  features?: { 
+    quoteSummary?: boolean; 
+    bidCoaching?: boolean; 
+    contextualInsights?: boolean 
+  }
+) {
+  let prompt = `You are SolarBot, an advanced AI assistant for SolarMatch Australia. You specialize in solar energy advice, quote analysis, and installation guidance.
+
+CURRENT USER CONTEXT:
+- User Type: ${context.userType}
+- Location: ${context.userLocation}
+- Recent Quotes: ${context.recentQuotes.length} quotes
+- Active Bids: ${context.activeBids.length} bids
+
+ENHANCED CAPABILITIES:`
+
+  if (features?.quoteSummary) {
+    prompt += `
+- QUOTE ANALYSIS: Analyze solar quotes for cost, value, equipment quality, and potential savings
+- COMPARISON: Compare multiple quotes side-by-side with pros/cons`
+  }
+
+  if (features?.bidCoaching) {
+    prompt += `
+- BID COACHING: Provide strategic advice for solar installation bidding
+- NEGOTIATION: Help users understand fair pricing and negotiation tactics`
+  }
+
+  if (features?.contextualInsights) {
+    prompt += `
+- INSIGHTS: Provide personalized recommendations based on user's location, property, and history
+- OPTIMIZATION: Suggest system size, orientation, and equipment based on specific needs`
+  }
+
+  prompt += `
+
+RESPONSE GUIDELINES:
+1. Be conversational, helpful, and Australia-focused
+2. Provide specific, actionable advice
+3. Include relevant calculations when discussing costs or savings
+4. Reference current Australian rebates and incentives
+5. Suggest next steps and offer to help with specific tasks
+6. If analyzing quotes or bids, provide structured comparisons
+
+RESPONSE FORMAT:
+Provide responses in a helpful, conversational tone. When appropriate, include:
+- Specific recommendations
+- Relevant calculations
+- Next suggested actions
+- Offers to help with related tasks`
+
+  return prompt
+}
+
+// Process AI response for enhanced features
+async function processAIResponse(
+  aiMessage: string, 
+  context: { 
+    recentQuotes: Array<Record<string, unknown>>; 
+    userLocation: string 
+  }, 
+  features?: { 
+    quoteSummary?: boolean; 
+    bidCoaching?: boolean 
+  }
+) {
+  // Detect message type based on content and context
+  let messageType = 'general'
+  let suggestions: string[] = []
+  const actionButtons: Array<{ label: string; action: string; style: 'primary' | 'secondary' }> = []
+  let relatedQuotes: string[] = []
+
+  // Quote-related responses
+  if (aiMessage.includes('quote') || aiMessage.includes('cost') || aiMessage.includes('price')) {
+    messageType = 'quote_summary'
+    actionButtons.push({
+      label: 'Get New Quote',
+      action: 'navigate_quote_form',
+      style: 'primary'
+    })
+    
+    if (context.recentQuotes.length > 0) {
+      actionButtons.push({
+        label: 'Compare My Quotes',
+        action: 'compare_quotes',
+        style: 'secondary'
+      })
+      relatedQuotes = context.recentQuotes.slice(0, 3).map((q: Record<string, unknown>) => q.id as string)
+    }
+  }
+
+  // Bidding-related responses  
+  if (aiMessage.includes('bid') || aiMessage.includes('offer') || aiMessage.includes('negotiate')) {
+    messageType = 'bid_coach'
+    suggestions = [
+      'What factors should I consider when comparing bids?',
+      'How can I negotiate a better deal?',
+      'What questions should I ask installers?'
+    ]
+    
+    actionButtons.push({
+      label: 'View Active Bids',
+      action: 'view_bids',
+      style: 'primary'
+    })
+  }
+
+  // System insights
+  if (aiMessage.includes('recommend') || aiMessage.includes('suggest') || aiMessage.includes('optimize')) {
+    messageType = 'system_insight'
+    suggestions = [
+      'Calculate my potential savings',
+      'Find installers in my area',
+      'Check available rebates'
+    ]
+  }
+
+  // Calculate confidence based on context availability
+  let confidence = 0.7 // Base confidence
+  if (context.recentQuotes.length > 0) confidence += 0.1
+  if (context.userLocation !== 'Australia') confidence += 0.1
+  if (features?.quoteSummary) confidence += 0.1
+
+  return {
+    message: aiMessage,
+    messageType,
+    suggestions: suggestions.length > 0 ? suggestions : undefined,
+    actionButtons: actionButtons.length > 0 ? actionButtons : undefined,
+    relatedQuotes: relatedQuotes.length > 0 ? relatedQuotes : undefined,
+    confidence: Math.min(confidence, 1.0)
+  }
+}

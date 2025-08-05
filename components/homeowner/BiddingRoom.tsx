@@ -14,7 +14,8 @@ import {
   MessageSquare,
   Check,
   AlertTriangle,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
@@ -84,6 +85,37 @@ const BiddingRoom: React.FC = () => {
   const [selectedBidCard, setSelectedBidCard] = useState<BidCard | null>(null);
   const [now, setNow] = useState(new Date());
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // AI Analysis function
+  const handleAIAnalysis = (card: BidCard) => {
+    // Trigger floating chat with bid coaching context
+    const event = new CustomEvent('ai-chat-analyze-quote', {
+      detail: {
+        quoteId: card.quote.id,
+        quoteData: {
+          id: card.quote.id,
+          systemSize: card.quote.system_type,
+          totalCost: card.bids.length > 0 ? card.bids[card.bids.length - 1].offer_price : card.quote.price,
+          installerName: card.installer.company_name,
+          rating: card.installer.rating,
+          installTime: card.bids.length > 0 ? card.bids[card.bids.length - 1].install_time : card.quote.install_time,
+          bidHistory: card.bids,
+          biddingStatus: card.bidding_status
+        },
+        message: `Please analyze this solar installation bid for me:
+        
+        Installer: ${card.installer.company_name} (Rating: ${card.installer.rating}/5)
+        System: ${card.quote.system_type}
+        Current Price: $${card.bids.length > 0 ? card.bids[card.bids.length - 1].offer_price : card.quote.price}
+        Install Time: ${card.bids.length > 0 ? card.bids[card.bids.length - 1].install_time : card.quote.install_time}
+        Bidding Rounds: ${card.bidding_status.rounds_completed} of 3
+        Status: ${card.bidding_status.status}
+        
+        Should I accept this offer, negotiate further, or consider other options? What are the key factors I should consider?`
+      }
+    });
+    window.dispatchEvent(event);
+  };
 
   // Update current time every second for countdown timers
   useEffect(() => {
@@ -829,6 +861,15 @@ const BiddingRoom: React.FC = () => {
                   
                   {/* Action Buttons */}
                   <div className="flex flex-wrap gap-3">
+                    {/* AI Analysis Button */}
+                    <button
+                      onClick={() => handleAIAnalysis(card)}
+                      className="bg-gradient-to-r from-purple-500 to-purple-600 text-white px-4 py-2 rounded-lg font-semibold hover:from-purple-600 hover:to-purple-700 transition-all flex items-center space-x-2"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      <span>AI Analysis</span>
+                    </button>
+                    
                     {/* Counter Offer Button */}
                     <button
                       onClick={() => handleCounterOffer(card)}

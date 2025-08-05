@@ -11,7 +11,10 @@ import {
   RefreshCw,
   PieChart,
   BarChart,
-  LineChart
+  LineChart,
+  X,
+  ShoppingBag,
+  Star
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { useInstallerAuth } from '@/hooks/useInstallerAuth';

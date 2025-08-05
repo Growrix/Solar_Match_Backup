@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PenTool, Star, MessageSquare, ArrowUpDown as ArrowsUpDown, Check, Trash2, AlertCircle, Clock, CheckCircle, FileText } from 'lucide-react';
+import { PenTool, Star, MessageSquare, ArrowUpDown as ArrowsUpDown, Check, Trash2, AlertCircle, Clock, CheckCircle, FileText, X } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';
 import ChatWithInstaller from '@/components/homeowner/ChatWithInstaller';

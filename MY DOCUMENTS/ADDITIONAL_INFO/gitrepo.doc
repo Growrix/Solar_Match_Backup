@@ -3,3 +3,17 @@ Primary: https://github.com/Growrix/SolarMatch-next.js
 
 Secondary: https://github.com/Growrix/Solar_Match_Backup.git
 
+# Execution Prompt
+
+To push the project to the primary repository, use the following command:
+
+```
+git remote set-url origin https://github.com/Growrix/SolarMatch-next.js ; git push --force origin main
+```
+
+To push the project to the secondary repository, use the following command:
+
+```
+git remote set-url origin https://github.com/Growrix/Solar_Match_Backup.git ; git push --force origin main
+```
+

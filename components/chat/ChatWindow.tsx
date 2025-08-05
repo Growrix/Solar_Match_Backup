@@ -16,6 +16,31 @@ import QuickActions from './QuickActions';
 import { useChatHistory } from '../../hooks/useChatHistory';
 import { useOpenAI } from '../../hooks/useOpenAI';
 import { useSpeechRecognition } from '../../hooks/useSpeechRecognition';
+import ReactMarkdown from 'react-markdown';
+
+interface ActionButton {
+  label: string;
+  action: string;
+  style: 'primary' | 'secondary';
+}
+
+interface EnhancedMessage {
+  id: string;
+  content: string;
+  role: 'user' | 'assistant';
+  timestamp: Date;
+  messageType?: 'general' | 'quote_summary' | 'bid_coach' | 'system_insight';
+  suggestions?: string[];
+  actionButtons?: ActionButton[];
+  relatedQuotes?: string[];
+  confidence?: number;
+  isError?: boolean;
+  attachment?: {
+    name: string;
+    size: number;
+    type: string;
+  };
+}
 
 interface ChatWindowProps {
   isOpen: boolean;
@@ -40,6 +65,135 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose }) => {
     isSupported 
   } = useSpeechRecognition();
 
+  // Enhanced Chat Message Component
+  const EnhancedChatMessage: React.FC<{
+    message: any;
+    onActionClick: (action: string) => void;
+  }> = ({ message, onActionClick }) => {
+    const getMessageIcon = () => {
+      switch (message.messageType) {
+        case 'quote_summary': return '📊';
+        case 'bid_coach': return '🎯';
+        case 'system_insight': return '💡';
+        default: return '🤖';
+      }
+    };
+
+    const getMessageStyle = () => {
+      switch (message.messageType) {
+        case 'quote_summary': return 'border-l-4 border-blue-500 bg-blue-50/10';
+        case 'bid_coach': return 'border-l-4 border-green-500 bg-green-50/10';
+        case 'system_insight': return 'border-l-4 border-purple-500 bg-purple-50/10';
+        default: return '';
+      }
+    };
+
+    return (
+      <div className={`${getMessageStyle()} rounded-lg p-4 mb-4`}>
+        {/* Message Header */}
+        <div className="flex items-center space-x-2 mb-2">
+          <span className="text-lg">{getMessageIcon()}</span>
+          <span className="text-sm font-medium text-giants_orange-500">
+            {message.messageType === 'quote_summary' && 'Quote Analysis'}
+            {message.messageType === 'bid_coach' && 'Bid Coaching'}
+            {message.messageType === 'system_insight' && 'System Insight'}
+            {message.messageType === 'general' && 'Solar Assistant'}
+          </span>
+          {message.confidence && (
+            <span className="text-xs text-battleship_gray-600">
+              ({Math.round(message.confidence * 100)}% confidence)
+            </span>
+          )}
+        </div>
+
+        {/* Message Content */}
+        <div className="text-white mb-3">
+          <ReactMarkdown>{message.content}</ReactMarkdown>
+        </div>
+
+        {/* Suggestions */}
+        {message.suggestions && (
+          <div className="mb-3">
+            <p className="text-sm text-battleship_gray-600 mb-2">💭 You might also ask:</p>
+            <div className="space-y-1">
+              {message.suggestions.map((suggestion: string, index: number) => (
+                <button
+                  key={index}
+                  onClick={() => setMessage(suggestion)}
+                  className="block w-full text-left text-sm text-blue-400 hover:text-blue-300 bg-onyx-600/30 hover:bg-onyx-600/50 rounded px-3 py-2 transition-colors"
+                >
+                  "{suggestion}"
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        {message.actionButtons && (
+          <div className="flex flex-wrap gap-2">
+            {message.actionButtons.map((button: ActionButton, index: number) => (
+              <button
+                key={index}
+                onClick={() => onActionClick(button.action)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  button.style === 'primary'
+                    ? 'bg-giants_orange-500 hover:bg-giants_orange-600 text-white'
+                    : 'bg-onyx-600/50 hover:bg-onyx-600/70 text-white border border-onyx-600/30'
+                }`}
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Related Quotes */}
+        {message.relatedQuotes && message.relatedQuotes.length > 0 && (
+          <div className="mt-3 p-3 bg-onyx-600/20 rounded-lg">
+            <p className="text-sm text-battleship_gray-600 mb-2">📋 Related to your quotes:</p>
+            <div className="flex flex-wrap gap-2">
+              {message.relatedQuotes.map((quoteId: string, index: number) => (
+                <button
+                  key={index}
+                  onClick={() => onActionClick(`view_quote_${quoteId}`)}
+                  className="text-xs bg-giants_orange-500/20 text-giants_orange-400 px-2 py-1 rounded hover:bg-giants_orange-500/30"
+                >
+                  Quote #{quoteId.slice(-6)}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Action Handler
+  const handleActionClick = (action: string) => {
+    switch (action) {
+      case 'navigate_quote_form':
+        window.location.href = '/request-quote';
+        break;
+      case 'compare_quotes':
+        window.dispatchEvent(new CustomEvent('navigate-dashboard', { detail: 'written-quotes' }));
+        break;
+      case 'view_bids':
+        window.dispatchEvent(new CustomEvent('navigate-dashboard', { detail: 'bidding-room' }));
+        break;
+      default:
+        if (action.startsWith('view_quote_')) {
+          const quoteId = action.replace('view_quote_', '');
+          console.log('View quote:', quoteId);
+          // Navigate to quote details
+        }
+        break;
+    }
+    
+    // Close chat after navigation
+    onClose();
+  };
+
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -60,6 +214,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose }) => {
     }
   }, [message]);
 
+  // Event listener for AI chat message sending
+  useEffect(() => {
+    const handleAISendMessage = (event: any) => {
+      setMessage(event.detail.message);
+      setTimeout(() => handleSendMessage(), 100);
+    };
+
+    window.addEventListener('ai-chat-send-message', handleAISendMessage);
+    
+    return () => {
+      window.removeEventListener('ai-chat-send-message', handleAISendMessage);
+    };
+  }, []);
+
   const handleSendMessage = async () => {
     if (!message.trim() || isLoading) return;
 
@@ -75,17 +243,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose }) => {
     setShowQuickActions(false);
 
     try {
-      const response = await sendMessage(message);
+      const response = await sendMessage(message, messages);
       
-      // Ensure aiMessage.content is a string
-      const aiMessage = {
-        id: Date.now().toString(),
-        content: response || '', // Default to an empty string if null
-        role: 'assistant' as const,
-        timestamp: new Date()
-      };
+      if (response) {
+        // Handle enhanced AI response
+        const aiMessage = {
+          id: Date.now().toString(),
+          content: response.message,
+          role: 'assistant' as const,
+          timestamp: new Date(),
+          messageType: response.messageType,
+          suggestions: response.suggestions,
+          actionButtons: response.actionButtons,
+          relatedQuotes: response.relatedQuotes,
+          confidence: response.confidence
+        };
 
-      addMessage(aiMessage);
+        addMessage(aiMessage);
+      } else {
+        throw new Error('No response received');
+      }
     } catch {
       const errorMessage = {
         id: (Date.now() + 1).toString(),
@@ -219,7 +396,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ isOpen, onClose }) => {
                   </div>
                 ) : (
                   messages.map((msg) => (
-                    <ChatMessage key={msg.id} message={msg} />
+                    msg.role === 'assistant' && (msg as any).messageType ? (
+                      <EnhancedChatMessage 
+                        key={msg.id} 
+                        message={msg} 
+                        onActionClick={handleActionClick}
+                      />
+                    ) : (
+                      <ChatMessage key={msg.id} message={msg} />
+                    )
                   ))
                 )}
                 

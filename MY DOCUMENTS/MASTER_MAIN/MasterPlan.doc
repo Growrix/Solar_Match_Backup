@@ -1298,6 +1298,41 @@ Here is the final and production-aligned version of the Installer Quote Builder 
 - Role-specific prompts:
   - Homeowner Mode: Remembers rebates searched, guides read, compared quotes
   - Installer Mode: Remembers last quote draft, Bid Coach suggestions, unlocked leads
+
+---
+
+# ✅ NEW MODULE: AI-Powered Autoblog System (Phase 4)
+
+## 🤖 AI-Powered Autoblog System (New Module)
+
+### Purpose
+Automatically research, generate, and publish high-quality solar content using AI to drive SEO growth and lead generation. The system crawls competitor content, analyzes trending topics, and creates fresh articles for the SolarMatch blog.
+
+### Capabilities
+- **Competitor Content Scraping**: Monitor leading solar websites for trending topics and content gaps
+- **Keyword Analysis**: Extract popular solar-related keywords and search trends
+- **AI Content Generation**: Create original articles using OpenAI with solar expertise prompts
+- **Content Scheduling**: Auto-publish or queue for admin review
+- **SEO Optimization**: Generate meta tags, slugs, and JSON-LD schema automatically
+- **Admin Editing Interface**: Review, edit, and approve AI-generated content before publishing
+
+### Dependencies
+- **OpenAI API**: For content generation and topic analysis
+- **Admin Authentication**: Secure access to content management features
+- **Existing Blog System**: Built on current `blog_posts` table and `lib/services/blog.ts`
+- **SEO Infrastructure**: Leverage Next.js metadata system for optimization
+
+### Role Integration
+- **Automated Lead Generation**: Fresh content attracts organic search traffic
+- **Trust Building**: Regular publishing establishes authority in solar industry
+- **User Education**: Supports homeowner decision-making with timely, relevant content
+- **Installer Value**: Provides talking points and market insights for sales conversations
+
+### Business Impact
+- **Reduced Content Costs**: Automates expensive content creation process
+- **Improved SEO Rankings**: Consistent publishing boosts search visibility
+- **Lead Quality**: Educational content attracts more informed prospects
+- **Platform Authority**: Establishes SolarMatch as a trusted solar information source
 - GPT prompt dynamically assembled with:
   - Role
   - Page

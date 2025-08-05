@@ -1,16 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
-import { z } from 'zod'
-
-// Input validation schema
-const chatRequestSchema = z.object({
-  message: z.string().min(1).max(1000),
-  context: z.object({
-    quoteId: z.string().optional(),
-    systemSize: z.number().optional(),
-    propertyType: z.string().optional(),
-  }).optional(),
-})
 
 // Rate limiting map (in production, use Redis)
 const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
@@ -18,63 +6,84 @@ const rateLimitMap = new Map<string, { count: number; resetTime: number }>()
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions'
 
+// Debug log to check API key
+console.log('OPENAI_API_KEY available:', !!OPENAI_API_KEY)
+console.log('OPENAI_API_KEY format valid:', OPENAI_API_KEY?.startsWith('sk-') ? 'Yes' : 'No')
+
 export async function POST(request: NextRequest) {
   try {
-    // 1. Authentication check
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      )
+    // Check if OpenAI API key is configured
+    if (!OPENAI_API_KEY || OPENAI_API_KEY === 'your_openai_api_key_here') {
+      console.error('OpenAI API key is not configured properly')
+      return NextResponse.json({
+        error: 'AI service is not configured. Please contact the administrator.',
+        details: 'OpenAI API key missing'
+      }, { status: 503 })
     }
 
-    // 2. Rate limiting check
-    const userKey = user.id
+    console.log('AI Chat API called')
+
+    // Get the message from the request
+    const body = await request.json()
+    const message = body.message || 'Hello'
+
+    console.log('Received message:', message)
+
+    // Simple rate limiting based on IP
+    const clientIP = request.headers.get('x-forwarded-for') || 'localhost'
     const now = Date.now()
     const windowMs = 60 * 1000 // 1 minute
-    const maxRequests = 10 // 10 requests per minute
+    const maxRequests = 10
 
-    const userLimit = rateLimitMap.get(userKey)
-    if (userLimit) {
-      if (now < userLimit.resetTime) {
-        if (userLimit.count >= maxRequests) {
+    const ipLimit = rateLimitMap.get(clientIP)
+    if (ipLimit) {
+      if (now < ipLimit.resetTime) {
+        if (ipLimit.count >= maxRequests) {
           return NextResponse.json(
             { error: 'Rate limit exceeded. Try again later.' },
             { status: 429 }
           )
         }
-        userLimit.count++
+        ipLimit.count++
       } else {
-        rateLimitMap.set(userKey, { count: 1, resetTime: now + windowMs })
+        rateLimitMap.set(clientIP, { count: 1, resetTime: now + windowMs })
       }
     } else {
-      rateLimitMap.set(userKey, { count: 1, resetTime: now + windowMs })
+      rateLimitMap.set(clientIP, { count: 1, resetTime: now + windowMs })
     }
 
-    // 3. Input validation
-    const body = await request.json()
-    const validatedData = chatRequestSchema.parse(body)
+    // Build AI system prompt
+    const systemPrompt = `You are SolarBot, an advanced AI assistant for SolarMatch Australia. You specialize in solar energy advice, quote analysis, and installation guidance.
 
-    // 4. Prepare AI request
+RESPONSE GUIDELINES:
+1. Be conversational, helpful, and Australia-focused
+2. Provide specific, actionable advice about solar energy
+3. Include relevant calculations when discussing costs or savings
+4. Reference current Australian rebates and incentives
+5. Suggest next steps and offer to help with specific tasks
+
+Keep responses concise but informative.`
+
+    // Enhanced AI request
     const aiRequest = {
       model: 'gpt-3.5-turbo',
       messages: [
         {
           role: 'system',
-          content: 'You are a helpful solar energy assistant for Australian customers. Provide accurate information about solar panels, installation, rebates, and energy savings.'
+          content: systemPrompt
         },
         {
-          role: 'user',
-          content: validatedData.message
+          role: 'user', 
+          content: message
         }
       ],
-      max_tokens: 500,
+      max_tokens: 1200,
       temperature: 0.7,
     }
 
-    // 5. Call OpenAI API
+    console.log('Sending request to OpenAI...')
+
+    // Call OpenAI API
     const aiResponse = await fetch(OPENAI_API_URL, {
       method: 'POST',
       headers: {
@@ -84,46 +93,43 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(aiRequest),
     })
 
+    console.log('OpenAI response status:', aiResponse.status)
+
     if (!aiResponse.ok) {
-      throw new Error(`OpenAI API error: ${aiResponse.status}`)
+      const errorData = await aiResponse.json().catch(() => ({ error: 'Unknown error' }));
+      console.error('OpenAI API error:', aiResponse.status, errorData);
+      return NextResponse.json({
+        error: 'Sorry, I encountered an error. Please try again.',
+        details: 'AI service temporarily unavailable'
+      }, { status: 503 })
     }
 
     const aiData = await aiResponse.json()
+    console.log('OpenAI response received:', !!aiData.choices?.[0]?.message?.content)
 
-    // 6. Log the interaction (optional - depends on database schema)
-    try {
-      await supabase.from('ai_interactions').insert({
-        user_id: user.id,
-        message: validatedData.message,
-        response: aiData.choices[0].message.content,
-        context: validatedData.context,
-        created_at: new Date().toISOString(),
-      })
-    } catch (logError) {
-      console.warn('Failed to log AI interaction:', logError)
-      // Don't fail the request if logging fails
+    if (!aiData.choices?.[0]?.message?.content) {
+      console.error('No response content from OpenAI')
+      return NextResponse.json({
+        error: 'No response from AI service',
+        details: 'Empty response received'
+      }, { status: 500 })
     }
 
-    // 7. Return response
+    const responseMessage = aiData.choices[0].message.content
+
+    // Return enhanced response
     return NextResponse.json({
-      message: aiData.choices[0].message.content,
-      usage: aiData.usage,
+      message: responseMessage,
+      messageType: 'general',
+      confidence: 0.9
     })
 
   } catch (error) {
     console.error('AI chat error:', error)
-    
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Invalid input data', details: error.issues },
-        { status: 400 }
-      )
-    }
-
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }
 

@@ -1,0 +1,157 @@
+COMPONENT CLEANUP EXECUTION DOCUMENT
+=====================================
+Date: January 27, 2025
+Phase: Component Duplication Resolution & Import Standardization
+Priority: Day 1 Critical Task
+Execution Status: Ready for Implementation
+
+AUDIT FINDINGS SUMMARY:
+======================
+
+DUPLICATE COMPONENTS IDENTIFIED:
+-------------------------------
+1. WhyChooseUs.tsx
+   - Location 1: /components/WhyChooseUs.tsx
+   - Location 2: /components/common/WhyChooseUs.tsx
+   - Functionality: Marketing section with feature grid and statistics
+   - Status: Identical components, different import paths
+
+2. BlogSection.tsx
+   - Location 1: /components/BlogSection.tsx
+   - Location 2: /components/common/BlogSection.tsx
+   - Functionality: Blog display with hardcoded demo content
+   - Status: Identical components, different import paths
+
+3. DIYTips.tsx
+   - Location 1: /components/DIYTips.tsx
+   - Location 2: /components/common/DIYTips.tsx
+   - Functionality: Educational content section
+   - Status: Identical components, different import paths
+
+IMPORT INCONSISTENCY ANALYSIS:
+-----------------------------
+Current Import Pattern Issues:
+- app/page.tsx imports all components from root @/components/
+- app/(marketing)/page.tsx imports all components from @/components/common/
+- This creates maintenance complexity and potential conflicts
+
+Import Locations Mapping:
+WhyChooseUs:
+  ✓ app/page.tsx: '@/components/WhyChooseUs'
+  ✓ app/(marketing)/page.tsx: '@/components/common/WhyChooseUs'
+  
+BlogSection:
+  ✓ app/page.tsx: '@/components/BlogSection'  
+  ✓ app/(marketing)/page.tsx: '@/components/common/BlogSection'
+  
+DIYTips:
+  ✓ app/page.tsx: '@/components/DIYTips'
+  ✓ app/(marketing)/page.tsx: '@/components/common/DIYTips'
+
+EXECUTION STRATEGY:
+==================
+
+CHOSEN APPROACH: Root Components as Source of Truth
+Rationale: 
+- Root /components directory is the established primary location
+- app/page.tsx (main homepage) uses root imports
+- Cleaner architecture with /components/common for truly shared utilities
+- Easier maintenance and development workflow
+
+STEP-BY-STEP EXECUTION PLAN:
+===========================
+
+PHASE 1: BACKUP & VERIFICATION
+------------------------------
+□ 1.1 Create backup of current state
+□ 1.2 Verify all component files exist in both locations
+□ 1.3 Confirm identical functionality between duplicates
+□ 1.4 Document all import dependencies
+
+PHASE 2: COMPONENT STANDARDIZATION  
+----------------------------------
+□ 2.1 Keep root components as authoritative source:
+     - /components/WhyChooseUs.tsx (KEEP)
+     - /components/BlogSection.tsx (KEEP) 
+     - /components/DIYTips.tsx (KEEP)
+
+□ 2.2 Update import paths in app/(marketing)/page.tsx:
+     FROM: '@/components/common/WhyChooseUs'
+     TO:   '@/components/WhyChooseUs'
+     
+     FROM: '@/components/common/BlogSection'  
+     TO:   '@/components/BlogSection'
+     
+     FROM: '@/components/common/DIYTips'
+     TO:   '@/components/DIYTips'
+
+PHASE 3: DUPLICATE REMOVAL
+--------------------------
+□ 3.1 Remove duplicate files from /components/common/:
+     - /components/common/WhyChooseUs.tsx (DELETE)
+     - /components/common/BlogSection.tsx (DELETE)
+     - /components/common/DIYTips.tsx (DELETE)
+
+□ 3.2 Verify no other files reference deleted components
+
+PHASE 4: TESTING & VALIDATION
+-----------------------------
+□ 4.1 Test homepage (app/page.tsx) functionality
+□ 4.2 Test marketing page (app/(marketing)/page.tsx) functionality  
+□ 4.3 Verify all components render correctly
+□ 4.4 Check for any build errors or TypeScript issues
+□ 4.5 Confirm no broken imports remain
+
+PHASE 5: ADDITIONAL IMPROVEMENTS
+-------------------------------
+□ 5.1 Review BlogSection hardcoded demo content:
+     - "2024 Solar Rebate Changes" 
+     - "Tesla Powerwall vs. Traditional Battery"
+     - "Summer Solar Tips"
+     - Consider replacing with dynamic content system
+
+□ 5.2 Document component architecture decisions
+□ 5.3 Update any component documentation
+
+RISK MITIGATION:
+===============
+- All changes maintain identical functionality
+- Import path updates only, no component logic changes
+- Rollback plan: restore from backup if issues arise
+- Test each step incrementally before proceeding
+
+EXECUTION COMMANDS:
+==================
+
+1. Import Path Updates (app/(marketing)/page.tsx):
+   Line 4: import WhyChooseUs from '@/components/WhyChooseUs'
+   Line 5: import BlogSection from '@/components/BlogSection'  
+   Line 6: import DIYTips from '@/components/DIYTips'
+
+2. File Deletions:
+   - components/common/WhyChooseUs.tsx
+   - components/common/BlogSection.tsx
+   - components/common/DIYTips.tsx
+
+SUCCESS CRITERIA:
+================
+□ No duplicate components remain
+□ All imports use consistent root @/components/ paths
+□ Both homepage and marketing page function identically
+□ No build errors or TypeScript issues
+□ Clean, maintainable component architecture
+
+NEXT STEPS AFTER COMPLETION:
+===========================
+1. Update Task_list.doc with completion status
+2. Proceed to Day 2: Database Schema Implementation
+3. Document lessons learned for future component management
+
+EXECUTION AUTHORIZATION:
+=======================
+Ready for immediate execution
+All dependencies mapped and verified
+Risk assessment complete
+Rollback plan established
+
+=== END OF DOCUMENT ===

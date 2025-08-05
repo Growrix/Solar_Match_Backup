@@ -1,0 +1,385 @@
+# AI FLOATING CHAT - MULTI-ROLE ENHANCEMENT
+**Generated**: August 6, 2025  
+**Project**: SolarMatch Next.js Platform  
+**Objective**: Enhance existing AI chat system to support role-specific behavior for 4 user types
+
+---
+
+## AUDIT FINDINGS
+
+### 🔍 EXISTING IMPLEMENTATION ANALYSIS
+
+**Current AI Chat Files Identified:**
+
+1. **API Route**: `app/api/ai/chat/route.ts`
+   - ✅ **Status**: Fully implemented and functional
+   - ✅ **OpenAI Integration**: Direct connection to GPT-3.5-turbo
+   - ✅ **Authentication**: Currently simplified (IP-based rate limiting)
+   - ✅ **System Prompt**: Hardcoded for Australian solar energy advice
+   - ⚠️ **Role Detection**: No current role-based logic
+
+2. **Client Hook**: `hooks/useOpenAI.ts`
+   - ✅ **Status**: Secure server-side communication
+   - ✅ **Features**: Basic chat, quote summarization, bid coaching
+   - ✅ **Context Support**: Partial implementation for enhanced features
+   - ⚠️ **Role Awareness**: No role detection or injection
+
+3. **Chat UI Components**:
+   - `components/chat/ChatWindow.tsx` - Main chat interface
+   - `components/chat/FloatingChat.tsx` - Floating chat wrapper
+   - `components/chat/FloatingChatButton.tsx` - Chat toggle button
+   - `components/chat/QuickActions.tsx` - Pre-defined action buttons
+   - `components/chat/ChatMessage.tsx` - Message display component
+   - ✅ **Status**: Enhanced with message types and action buttons
+   - ⚠️ **Role Context**: No role-specific UI adaptations
+
+4. **Authentication System**: 
+   - `lib/supabase.ts` - Supabase client configuration
+   - `hooks/useAuth.ts` - Authentication hook
+   - ✅ **User Detection**: Capable of identifying authenticated users
+   - ✅ **Role Data**: User profiles contain role information
+   - ⚠️ **AI Integration**: Not connected to chat system
+
+5. **Validation Schemas**: `lib/validation/chat.ts`
+   - ✅ **Input Validation**: Comprehensive Zod schemas
+   - ✅ **Message Types**: Support for different message categories
+   - ⚠️ **Role Validation**: No role-specific validation schemas
+
+### 🚨 CURRENT LIMITATIONS IDENTIFIED
+
+1. **No Role Detection**: AI chat system operates without user role awareness
+2. **Hardcoded System Prompt**: Single prompt for all users regardless of role
+3. **Missing Context Injection**: User-specific data not injected into AI requests
+4. **Authentication Disconnect**: Chat system bypasses authentication for simplicity
+5. **No Role-Specific UI**: Same chat interface across all user types
+6. **Limited Context Scope**: AI lacks access to user's platform data and role
+
+### 🎯 ROLE-SPECIFIC REQUIREMENTS ANALYSIS
+
+**1. 🌐 Anonymous Users (Homepage Visitors)**
+- **Current Access**: Can access floating chat on marketing pages
+- **Required Behavior**: General solar information, quote encouragement
+- **Context Needed**: Location-based advice, general solar benefits
+- **Restrictions**: No access to personal data or platform-specific features
+
+**2. 🏠 Homeowners**
+- **Current Access**: Homeowner dashboard with chat access
+- **Required Behavior**: Quote analysis, bid coaching, installer selection help
+- **Context Needed**: User's quotes, active bids, location, energy requirements
+- **Features**: Personalized recommendations, quote comparisons, timeline advice
+
+**3. 🧰 Installers** 
+- **Current Access**: Installer dashboard with chat access
+- **Required Behavior**: Lead optimization, bid strategy, performance coaching
+- **Context Needed**: Installer's active quotes, performance metrics, service area
+- **Features**: Lead qualification tips, competitive analysis, pricing guidance
+
+**4. 🛠️ Admins**
+- **Current Access**: Admin dashboard functionality
+- **Required Behavior**: Platform analytics, user support, system monitoring
+- **Context Needed**: Platform statistics, user activities, system health
+- **Features**: Platform insights, user management assistance, technical support
+
+---
+
+## 🚀 EXECUTION PLAN: MULTI-ROLE AI ENHANCEMENT
+
+### PHASE 1: AUTHENTICATION & ROLE DETECTION
+
+#### Step 1.1: Enhance API Route Authentication
+**File**: `app/api/ai/chat/route.ts`
+**Changes Required**:
+- ✅ Re-implement Supabase authentication with proper error handling
+- ✅ Add role detection logic based on user profile data
+- ✅ Create role-specific context builders
+- ✅ Implement role-based rate limiting (different limits per role)
+
+#### Step 1.2: User Context Service
+**File**: `lib/services/userContext.ts` (NEW)
+**Purpose**: Centralized user context and role detection
+**Features**:
+- ✅ Fetch user profile and role information
+- ✅ Load role-specific data (quotes, bids, performance metrics)
+- ✅ Generate contextual prompts based on user activity
+- ✅ Handle anonymous user context
+
+#### Step 1.3: Role-Based Validation
+**File**: `lib/validation/roleValidation.ts` (NEW)
+**Purpose**: Role-specific input validation and sanitization
+**Features**:
+- ✅ Anonymous user message validation
+- ✅ Homeowner-specific query validation
+- ✅ Installer business query validation
+- ✅ Admin system query validation
+
+### PHASE 2: DYNAMIC SYSTEM PROMPT GENERATION
+
+#### Step 2.1: Prompt Engine Service
+**File**: `lib/services/promptEngine.ts` (NEW)
+**Purpose**: Generate role-specific system prompts
+**Features**:
+- ✅ Base solar knowledge prompt
+- ✅ Role-specific behavior injection
+- ✅ Context-aware prompt modification
+- ✅ Dynamic prompt caching for performance
+
+#### Step 2.2: Role-Specific Prompt Templates
+**File**: `lib/prompts/rolePrompts.ts` (NEW)
+**Templates**:
+- ✅ Anonymous: General solar education and lead generation
+- ✅ Homeowner: Personalized quote analysis and decision support
+- ✅ Installer: Business coaching and lead optimization
+- ✅ Admin: Platform management and user support
+
+#### Step 2.3: Context Data Builders
+**File**: `lib/services/contextBuilders.ts` (NEW)
+**Purpose**: Role-specific context data preparation
+**Builders**:
+- ✅ `buildAnonymousContext()` - Location and general market data
+- ✅ `buildHomeownerContext()` - Quotes, bids, preferences, timeline
+- ✅ `buildInstallerContext()` - Active leads, performance, service area
+- ✅ `buildAdminContext()` - Platform stats, user activities, system health
+
+### PHASE 3: ENHANCED CLIENT-SIDE INTEGRATION
+
+#### Step 3.1: Enhanced useOpenAI Hook
+**File**: `hooks/useOpenAI.ts`
+**Enhancements**:
+- ✅ Automatic role detection and context injection
+- ✅ Role-specific method availability
+- ✅ Context-aware quick actions
+- ✅ Role-based feature flags
+
+#### Step 3.2: Role-Aware Chat Window
+**File**: `components/chat/ChatWindow.tsx`
+**Features**:
+- ✅ Role-specific chat header and branding
+- ✅ Contextual quick actions based on user role
+- ✅ Role-appropriate message suggestions
+- ✅ Dynamic feature availability
+
+#### Step 3.3: Dynamic Quick Actions
+**File**: `components/chat/QuickActions.tsx`
+**Enhancements**:
+- ✅ Anonymous: "Get Quote", "Find Installers", "Solar Calculator"
+- ✅ Homeowner: "Analyze My Quotes", "Compare Bids", "Timeline Help"
+- ✅ Installer: "Lead Tips", "Pricing Strategy", "Performance Review"
+- ✅ Admin: "User Analytics", "System Status", "Support Queries"
+
+### PHASE 4: ROLE-SPECIFIC FEATURES
+
+#### Step 4.1: Anonymous User Features
+**Capabilities**:
+- ✅ General solar education and ROI calculations
+- ✅ Location-based solar potential estimates
+- ✅ Installer recommendation (general, not specific leads)
+- ✅ Quote request guidance and form assistance
+- ✅ Solar incentive and rebate information
+
+#### Step 4.2: Homeowner Features
+**Capabilities**:
+- ✅ Personal quote analysis and comparison
+- ✅ Bid evaluation and negotiation coaching
+- ✅ Installer vetting and background checks
+- ✅ Timeline and installation process guidance
+- ✅ Energy monitoring and optimization advice
+
+#### Step 4.3: Installer Features
+**Capabilities**:
+- ✅ Lead qualification and conversion strategies
+- ✅ Competitive bidding analysis and pricing guidance
+- ✅ Customer communication templates and tips
+- ✅ Performance metrics analysis and improvement
+- ✅ Market trends and opportunity identification
+
+#### Step 4.4: Admin Features
+**Capabilities**:
+- ✅ Platform usage analytics and insights
+- ✅ User behavior analysis and recommendations
+- ✅ System performance monitoring assistance
+- ✅ Fraud detection and security guidance
+- ✅ Business intelligence and growth strategies
+
+### PHASE 5: SECURITY & VALIDATION
+
+#### Step 5.1: Role-Based Access Control
+**Implementation**:
+- ✅ Verify user permissions before context injection
+- ✅ Restrict sensitive data access by role
+- ✅ Implement data isolation between user types
+- ✅ Add audit logging for admin queries
+
+#### Step 5.2: Enhanced Rate Limiting
+**Configuration**:
+- ✅ Anonymous: 5 requests/minute (encourage registration)
+- ✅ Homeowner: 15 requests/minute (moderate usage)
+- ✅ Installer: 25 requests/minute (business usage)
+- ✅ Admin: 50 requests/minute (platform management)
+
+#### Step 5.3: Input Validation & Sanitization
+**Features**:
+- ✅ Role-specific query validation
+- ✅ Sensitive data filtering by user type
+- ✅ Context injection security checks
+- ✅ Output sanitization for role-appropriate responses
+
+---
+
+## 🔧 TECHNICAL IMPLEMENTATION DETAILS
+
+### Authentication Flow Enhancement
+```typescript
+// Enhanced API route with role detection
+export async function POST(request: Request) {
+  // 1. Extract user session and identify role
+  const { user, role } = await authenticateAndGetRole(request)
+  
+  // 2. Build role-specific context
+  const context = await buildUserContext(user, role)
+  
+  // 3. Generate appropriate system prompt
+  const systemPrompt = generateRoleSpecificPrompt(role, context)
+  
+  // 4. Apply role-based rate limiting
+  await applyRoleLimiting(request, role)
+  
+  // 5. Process AI request with injected context
+  return processAIRequest(message, systemPrompt, context)
+}
+```
+
+### Role Context Structure
+```typescript
+interface UserContext {
+  role: 'anonymous' | 'homeowner' | 'installer' | 'admin'
+  user?: User
+  permissions: string[]
+  data: {
+    quotes?: Quote[]
+    bids?: Bid[]
+    performance?: PerformanceMetrics
+    preferences?: UserPreferences
+    location?: LocationData
+    analytics?: PlatformAnalytics
+  }
+}
+```
+
+### Dynamic Prompt Generation
+```typescript
+const generateSystemPrompt = (role: UserRole, context: UserContext) => {
+  const basePrompt = BASE_SOLAR_EXPERT_PROMPT
+  const rolePrompt = ROLE_SPECIFIC_PROMPTS[role]
+  const contextData = formatContextForPrompt(context)
+  
+  return `${basePrompt}\n\n${rolePrompt}\n\nContext: ${contextData}`
+}
+```
+
+---
+
+## 📊 EXPECTED OUTCOMES
+
+### User Experience Improvements
+- ✅ **Personalized Responses**: AI provides role-appropriate advice
+- ✅ **Contextual Awareness**: AI understands user's current situation
+- ✅ **Efficient Interactions**: Role-specific quick actions reduce query time
+- ✅ **Progressive Enhancement**: Features unlock based on user engagement
+
+### Business Value
+- ✅ **Increased Conversion**: Anonymous users guided toward registration
+- ✅ **Enhanced Retention**: Personalized experience increases user satisfaction
+- ✅ **Operational Efficiency**: Reduced support burden through intelligent assistance
+- ✅ **Data-Driven Insights**: Role-based analytics improve platform optimization
+
+### Technical Benefits
+- ✅ **Scalable Architecture**: Role-based system supports future user types
+- ✅ **Maintainable Code**: Modular prompt and context management
+- ✅ **Security Compliance**: Role-based access control and data protection
+- ✅ **Performance Optimization**: Context caching and efficient data loading
+
+---
+
+## 🎯 VALIDATION CRITERIA
+
+### Functional Testing
+1. **Anonymous User Test**: 
+   - Query: "What is my role?" → Response: "You're browsing as a visitor..."
+   - Verify: No personal data access, general solar information only
+
+2. **Homeowner Test**:
+   - Query: "How are my quotes performing?" → Response: Analyzes user's specific quotes
+   - Verify: Personal quote data injection, bid comparison features
+
+3. **Installer Test**:
+   - Query: "How can I improve my lead conversion?" → Response: Business coaching
+   - Verify: Performance metrics access, lead optimization advice
+
+4. **Admin Test**:
+   - Query: "Show me platform health" → Response: System status and analytics
+   - Verify: Admin-level data access, platform management guidance
+
+### Security Validation
+- ✅ Verify role isolation (no cross-role data leakage)
+- ✅ Confirm authentication requirements per role
+- ✅ Test rate limiting enforcement
+- ✅ Validate input sanitization and output filtering
+
+### Performance Testing
+- ✅ Context loading performance per role
+- ✅ Prompt generation efficiency
+- ✅ API response times with role injection
+- ✅ Concurrent user handling across roles
+
+---
+
+## 📋 IMPLEMENTATION TIMELINE
+
+### Phase 1: Foundation (Days 1-2)
+- Day 1: Authentication enhancement and role detection
+- Day 2: User context service and role validation
+
+### Phase 2: AI Enhancement (Days 3-4)
+- Day 3: Prompt engine and role-specific templates
+- Day 4: Context builders and dynamic prompt generation
+
+### Phase 3: Frontend Integration (Days 5-6)
+- Day 5: Enhanced useOpenAI hook and chat window updates
+- Day 6: Role-specific quick actions and UI adaptations
+
+### Phase 4: Feature Implementation (Days 7-8)
+- Day 7: Role-specific capabilities and business logic
+- Day 8: Security enhancements and access controls
+
+### Phase 5: Testing & Validation (Days 9-10)
+- Day 9: Comprehensive testing across all roles
+- Day 10: Performance optimization and security validation
+
+---
+
+## ✅ READY FOR EXECUTION
+
+**All audit findings documented and execution plan prepared.**
+
+**Key Files to Modify/Create:**
+- `app/api/ai/chat/route.ts` (enhance)
+- `lib/services/userContext.ts` (new)
+- `lib/services/promptEngine.ts` (new)
+- `lib/services/contextBuilders.ts` (new)
+- `lib/validation/roleValidation.ts` (new)
+- `lib/prompts/rolePrompts.ts` (new)
+- `hooks/useOpenAI.ts` (enhance)
+- `components/chat/ChatWindow.tsx` (enhance)
+- `components/chat/QuickActions.tsx` (enhance)
+
+**Dependencies Required:**
+- Existing Supabase authentication system
+- Current OpenAI API integration
+- Established user role system in database
+
+**Ready to proceed with implementation upon user confirmation.**
+
+---
+
+*Document Created: August 6, 2025*
+*Status: Audit Complete - Awaiting Execution Approval*

@@ -9,7 +9,8 @@ import {
   MessageSquare, 
   AlertTriangle,
   CheckCircle,
-  Clock
+  Clock,
+  Mail
 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/lib/supabase';

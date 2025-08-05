@@ -109,7 +109,7 @@ const HomeownerDashboard = () => {
       case 'settings':
         return <SettingsSection />;
       default:
-        return <DashboardHome />;
+        return <DashboardOverview />;
     }
   };
 
