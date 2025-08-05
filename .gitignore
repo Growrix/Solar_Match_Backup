@@ -16,6 +16,9 @@ dist-ssr
 .next/cache/webpack/client-production/0.pack
 .next/cache/webpack/server-production/0.pack
 
+# Exclude the entire .next directory
+.next/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
