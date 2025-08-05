@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Exclude large files
+.next/cache/webpack/client-production/0.pack
+.next/cache/webpack/server-production/0.pack
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
